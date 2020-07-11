@@ -10,15 +10,15 @@ import os
 import ast
 import pandas as pd
 
-def splitData(ratio=[0.8, 0.1, 0.1], iPath="../data/working-wheat-data/train", oPath="../saved/splitData", koPath="../data/working-wheat-data/train.csv"):
+def splitData(ratio=[0.8, 0.1, 0.1], iPath="data/working-wheat-data/train", oPath="saved/splitData", koPath="data/working-wheat-data/train.csv"):
     """
     Function that takes the given input path (iPath) splits the image set into a given ratio then saves the names of images in each list to files
     output to output path (oPath)
 
     Arguments:
         ratio: a len-3 list containing the ratios of training, validation and testing data. default = [0.8, 0.1, 0.1]
-        iPath: input path. default = "../data/working-wheat-data/train"
-        oPath: output path. default = "../saved/splitData"
+        iPath: input path. default = "data/working-wheat-data/train"
+        oPath: output path. default = "saved/splitData"
         koPath: known bbox output csv path
     Returns:
         boolean of 0 or 1. fail or success.
@@ -85,7 +85,7 @@ def appendKnownOutputs(imgList, koPath):
         imgDict[img] = [ast.literal_eval(bbox) for bbox in relRow['bbox']]  # Save all bboxes to dictionary
     return(imgDict)
 
-def prevImages(dataPath="../saved/splitData/trainData", imgFolder="../data/working-wheat-data/train"):
+def prevImages(dataPath="saved/splitData/trainData", imgFolder="data/working-wheat-data/train"):
     """
     Function to simply test images and the bboxes
     Arguments:
@@ -101,7 +101,7 @@ def prevImages(dataPath="../saved/splitData/trainData", imgFolder="../data/worki
         cv2.waitKey(0)  # wait for key press before moving to next image
         if i > 20: break  # Break after 20 images
 
-def openCVImgConvert(func, oPath, iPath="../data/working-wheat-data/train"):
+def openCVImgConvert(func, oPath, iPath="data/working-wheat-data/train"):
     """
     Funtion to help quickly apply an openCV image transformation and save the outputs
     Examples of Open CV features:
@@ -189,7 +189,7 @@ def drawResults(modelpath, iters, trainLosses, valLosses, trainAcc, valAcc):
     plt.savefig(modelpath+"Loss Graph.png")
     plt.show()
 
-def loadData(batchsize, dictPath = "../saved/splitData", inPath = "../data/working-wheat-data/train"):
+def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-wheat-data/train"):
     """
     Function to quickly batch generate a DataLoader
     Arguments:
@@ -245,7 +245,7 @@ def evalRegress(net, loader, criterion, optimizer, isTraining, gpu=1):
     avgLoss = lossTot/len(loader)
     return(accuracy, avgLoss)
 
-def trainNet(net, data, batchsize, epochNo, lr, oPath="../saved", trainType='RegAdam', evaluate=evalRegress, isCuda=1, draw=1):
+def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAdam', evaluate=evalRegress, isCuda=1, draw=1):
     """
     Big boy function that actually brings all of the function above together and actually trains the model
     Arguments:
@@ -306,8 +306,8 @@ def trainNet(net, data, batchsize, epochNo, lr, oPath="../saved", trainType='Reg
 """ Eg (1) IGNORE
 ### Use example for imageLoader
 
-dictPath = "../saved/splitData/trainData"
-inPath   = "../data/working-wheat-data/train"
+dictPath = "saved/splitData/trainData"
+inPath   = "data/working-wheat-data/train"
 
 loader   = imgLoader(dictPath, inPath)
 for imgName, img, output in loader:
@@ -317,8 +317,8 @@ for imgName, img, output in loader:
 """ Eg (2) IGNORE
 ### Use example for openCVImgConvert
 
-outPath = "../data/working-wheat-data/cv2_Canny_100_200"
-inPath  = "../data/working-wheat-data/train"
+outPath = "data/working-wheat-data/cv2_Canny_100_200"
+inPath  = "data/working-wheat-data/train"
 
 edgeDetect = lambda oImg: cv2.Canny(oImg, 100, 200)  # The
 openCVImgConvert(edgeDetect, outPath, inPath)  # Note: the images that are outputted have the same name as the original images, they are just in a different folder
@@ -327,8 +327,8 @@ openCVImgConvert(edgeDetect, outPath, inPath)  # Note: the images that are outpu
 """ Eg (3) IGNORE
 ### Use example for imageLoader, with the feature-detected images produced from Eg (2)
 
-dictPath = "../saved/splitData/trainData"  # NOTE: DICT PATH IS THE SAME AS WAS IN Eg (1). IT DOES NOT NEED TO CHANGE
-inPath   = "../data/working-wheat-data/cv2_Canny_100_200"  # ONLY THE IMAGE DIRECTORY HAS CHANGED
+dictPath = "saved/splitData/trainData"  # NOTE: DICT PATH IS THE SAME AS WAS IN Eg (1). IT DOES NOT NEED TO CHANGE
+inPath   = "data/working-wheat-data/cv2_Canny_100_200"  # ONLY THE IMAGE DIRECTORY HAS CHANGED
 
 loader   = imgLoader(dictPath, inPath)
 for imgName, img, output in loader:
@@ -337,8 +337,8 @@ for imgName, img, output in loader:
 
 """ Eg (4) IGNORE
 ### Use example of prevImages with converted images from Eg (2)
-dictPath = "../saved/splitData/trainData"  # NOTE: DICT PATH IS THE SAME AS WAS IN Eg (1). IT DOES NOT NEED TO CHANGE
-inPath   = "../data/working-wheat-data/cv2_Canny_100_200"  # ONLY THE IMAGE DIRECTORY HAS CHANGED
+dictPath = "saved/splitData/trainData"  # NOTE: DICT PATH IS THE SAME AS WAS IN Eg (1). IT DOES NOT NEED TO CHANGE
+inPath   = "data/working-wheat-data/cv2_Canny_100_200"  # ONLY THE IMAGE DIRECTORY HAS CHANGED
 
 prevImages(dataPath=dictPath, imgFolder=inPath)
 """
