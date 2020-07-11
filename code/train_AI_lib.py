@@ -226,7 +226,8 @@ def evalRegress(net, loader, criterion, optimizer, isTraining, gpu=1):
     """
     lossTot = 0
     for img, noBbox, _, _ in loader:  # if isTraining, computing loss and training, if not, then computing loss
-        if gpu and torch.cuda.is_available(): img = img.cuda(); noBbox = noBbox.cuda(); noBbox = noBbox.float()
+        if gpu and torch.cuda.is_available(): img = img.cuda(); noBbox = noBbox.cuda();
+        noBbox = noBbox.float(); img = img.float()
         pred = net(img); pred=torch.squeeze(pred, 1)
         loss = criterion(pred, noBbox); lossTot += loss
         if isTraining:
@@ -286,8 +287,8 @@ def trainNet(net, data, batchsize, epochNo, lr, oPath="../saved", trainType='Reg
         if isCuda and torch.cuda.is_available(): start.record()
         iters += [epoch]
         #evaluate(net=net, loader=trainData, criterion=criterion, optimizer=optimizer, isTraining=True)
-        trainResults = evaluate(net=net, loader=trainData, criterion=criterion, optimizer=optimizer, isTraining=True)  # Calculating training error and loss
-        valResults   = evaluate(net=net, loader=  valData, criterion=criterion, optimizer=optimizer, isTraining=False)
+        trainResults = evaluate(net=net, loader=trainData, criterion=criterion, optimizer=optimizer, isTraining=True , gpu=isCuda)  # Calculating training error and loss
+        valResults   = evaluate(net=net, loader=  valData, criterion=criterion, optimizer=optimizer, isTraining=False, gpu=isCuda)
 
         if isCuda and torch.cuda.is_available(): end.record; torch.cuda.synchronize()
 
@@ -302,7 +303,7 @@ def trainNet(net, data, batchsize, epochNo, lr, oPath="../saved", trainType='Reg
     if draw: drawResults(modelpath, iters, trainLosses, valLosses, trainAcc, valAcc)
     return(iters, trainLosses, valLosses, trainAcc, valAcc)
 
-""" Eg (1)
+""" Eg (1) IGNORE
 ### Use example for imageLoader
 
 dictPath = "../saved/splitData/trainData"
@@ -313,7 +314,7 @@ for imgName, img, output in loader:
     ...
 """
 
-""" Eg (2)
+""" Eg (2) IGNORE
 ### Use example for openCVImgConvert
 
 outPath = "../data/working-wheat-data/cv2_Canny_100_200"
@@ -323,7 +324,7 @@ edgeDetect = lambda oImg: cv2.Canny(oImg, 100, 200)  # The
 openCVImgConvert(edgeDetect, outPath, inPath)  # Note: the images that are outputted have the same name as the original images, they are just in a different folder
 """
 
-""" Eg (3)
+""" Eg (3) IGNORE
 ### Use example for imageLoader, with the feature-detected images produced from Eg (2)
 
 dictPath = "../saved/splitData/trainData"  # NOTE: DICT PATH IS THE SAME AS WAS IN Eg (1). IT DOES NOT NEED TO CHANGE
@@ -334,7 +335,7 @@ for imgName, img, output in loader:
     ...
 """
 
-""" Eg (4)
+""" Eg (4) IGNORE
 ### Use example of prevImages with converted images from Eg (2)
 dictPath = "../saved/splitData/trainData"  # NOTE: DICT PATH IS THE SAME AS WAS IN Eg (1). IT DOES NOT NEED TO CHANGE
 inPath   = "../data/working-wheat-data/cv2_Canny_100_200"  # ONLY THE IMAGE DIRECTORY HAS CHANGED
@@ -371,6 +372,5 @@ class exNetClass(nn.Module):
 batchsize=64; lr=0.001; epochNo=10
 trainLoader, valLoader, _ = loadData(batchsize)
 netA = exNetClass("netA"); netA.cuda()
-netATrain = trainNet(netA, [trainLoader, valLoader], batchsize, epochNo, lr)
-netATrain.train()
+netATrain = trainNet(netA, [trainLoader, valLoader], batchsize, epochNo, lr, isCuda=1)
 """
