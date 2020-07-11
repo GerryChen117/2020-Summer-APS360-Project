@@ -8,8 +8,8 @@ working_dir = {"nikoog"          : "/content/drive/My Drive/ENGSCI/Year 3/SUMMER
                }
 
 uEmails     = {"nikoog"          : "nikoo.givehchian@gmail.com",
-               "CarbonicKevin"   : "kevinmj99@gmail.com"
-               "DriftingCloudII" : "gerrychen117@gmail.com"
+               "CarbonicKevin"   : "kevinmj99@gmail.com",
+               "DriftingCloudII" : "gerrychen117@gmail.com",
                "chanhyukyang"    : "chanhyukyang@hotmail.com"
                }
 
