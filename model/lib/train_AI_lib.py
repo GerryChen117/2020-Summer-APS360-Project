@@ -303,6 +303,11 @@ def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAda
     if draw: drawResults(modelpath, iters, trainLosses, valLosses, trainAcc, valAcc)
     return(iters, trainLosses, valLosses, trainAcc, valAcc)
 
+def setDirectory(path='..'):
+    print("Current Directory: {}".format(os.getcwd()))
+    os.chdir(path)
+    print("New Directory: {}".format(os.getcwd()))
+
 """ Eg (1) IGNORE
 ### Use example for imageLoader
 
