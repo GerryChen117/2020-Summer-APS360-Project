@@ -22,7 +22,7 @@ class git_commands:
     self.repo_name = repo_link.split('/')[-1][:-4]
     self.dir = working_dir[uname]
     print("setting ")
-    %cd $self.dir
+    os.chdir(self.dir)
 
     !git config --global user.email $email --quiet
     !git config --global user.name $uname --quiet
@@ -34,7 +34,7 @@ class git_commands:
   def pull(self):
     dir = !pwd
     if dir[0] != self.dir:
-      %cd $self.dir$self.repo_name
+      os.chdir(self.dir+self.repo_name)
     !git pull
 
   def commit(self, commit_msg, add_files='all'):
