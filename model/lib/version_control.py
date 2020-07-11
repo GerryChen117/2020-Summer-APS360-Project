@@ -3,7 +3,7 @@ import os
 #list of usernames and corresponding working directories.
 working_dir = {"nikoog"          : "/content/drive/My Drive/ENGSCI/Year 3/SUMMER 2020/APS360/",
                "CarbonicKevin"   : "/content/drive/My Drive/Colab Notebooks/APS360/",
-               "DriftingCloudII" : "/content/drive/My Drive/Colab Notebooks/Project5/"
+               "DriftingCloudII" : "/content/drive/My Drive/Colab Notebooks/Project5/",
                "chanhyukyang"    : "/content/drive/My Drive/Colab Notebooks/"
                }
 
