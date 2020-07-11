@@ -1,4 +1,5 @@
 import os
+
 #list of usernames and corresponding working directories.
 working_dir = {"nikoog"          : "/content/drive/My Drive/ENGSCI/Year 3/SUMMER 2020/APS360/",
                "CarbonicKevin"   : "/content/drive/My Drive/Colab Notebooks/APS360/",
@@ -32,12 +33,15 @@ class git_commands:
   def pull(self):
     dir = !pwd
     if dir[0] != self.dir:
-      %cd $self.dir+self.repo_name
+      %cd $self.dir$self.repo_name
     !git pull
 
   def commit(self, commit_msg, add_files='all'):
+    # add_files: string containing the filenames to be staged for commit, if not all changed files are going to be commited. <file1> <file2> ...
     if add_files == 'all':
       !git add -A
+    else:
+      !git add add_files
 
     if len(commit_msg) > 50:
       print("ERR: commit message too long.")
