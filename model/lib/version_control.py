@@ -29,6 +29,7 @@ class git_commands:
 
     if clone: !git clone $self.repo
 
+    self.branch = "master"
 
   def pull(self):
     dir = !pwd
@@ -52,6 +53,24 @@ class git_commands:
     !git commit -m commit_msg
     !git remote add origin "https://{uname}:{passwd}github@github.com/{repo}.git"
 
-    !git push -u origin master
+    !git push -u origin $self.branch
 
     return 1
+
+   def status(self):
+     !git status
+
+   def checkout(self, branch, isNew=False):
+     if isNew:
+        !git checkout -b $branch
+     else:
+        !git checkout $branch
+     self.branch = branch
+
+   def get_curr_branch(self):
+     print(self.branch)
+
+   def get_user_info(self):
+     print("user: %s \nemail: %s \nworking directory: %s" 
+                     % (self.uname, self.email, self.dir))
+
