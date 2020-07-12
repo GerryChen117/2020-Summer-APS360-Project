@@ -174,8 +174,8 @@ def drawResults(modelpath, iters, trainLosses, valLosses, trainAcc, valAcc):
     """
     plt.plot(iters, trainAcc, '.-', label =  "Training")
     plt.plot(iters,   valAcc, '.-', label = "Validation")
-    plt.title("Model Accuracy against Epoch No")
-    plt.xlabel("Epoch"); plt.ylabel("Accuracy")
+    plt.title("Model Root Mean Squared Error against Epoch No")
+    plt.xlabel("Epoch"); plt.ylabel("Root Mean Squared Error")
     plt.legend(); plt.grid()
     plt.savefig(modelpath+"Accuracy Graph.png")
     plt.show()
@@ -234,16 +234,17 @@ def evalRegress(net, loader, criterion, optimizer, isTraining, gpu=1):
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
-    
-    acc = []
+
+    ''' Redundent
     for img, noBbox, _, _ in loader:  # Computing accuracy
         if gpu and torch.cuda.is_available: img = img.cuda(); noBbox = noBbox.cuda()
         pred = net(img)
         acc += [torch.sum((pred-noBbox)**2)]
+    '''
 
-    accuracy = sum(acc)/len(loader)
+    accuracy = torch.sqrt(lossTot/len(loader))
     avgLoss = lossTot/len(loader)
-    return(accuracy, avgLoss)
+    return(avgLoss, accuracy)
 
 def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAdam', evaluate=evalRegress, isCuda=1, draw=1):
     """
@@ -297,14 +298,9 @@ def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAda
         torch.save(net.state_dict(), modelpath+"model_epoch{}".format(epoch))
 
         if isCuda and torch.cuda.is_available():
-            print("Epoch {} | Time Taken: {:.2f}s | Train acc: {:.10f},\
-                Train loss: {:.10f} | Validation acc: {:.10f}, Validation loss: {:.10f}\
-                ".format(epoch, start.elapsed_time(end)*0.001, trainAcc[epoch], trainLosses[epoch], valAcc[epoch], valLosses[epoch]))
-
+            print("Epoch {} | Time Taken: {:.2f}s | Train rootMSE: {:.10f}, Train loss: {:.10f} | Validation rootMSE: {:.10f}, Validation loss: {:.10f}".format(epoch, start.elapsed_time(end)*0.001, trainAcc[epoch], trainLosses[epoch], valAcc[epoch], valLosses[epoch]))
         else: 
-            print("Epoch {} | Train acc: {:.10f},\
-                Train loss: {:.10f} | Validation acc: {:.10f}, Validation loss: {:.10f}\
-                ".format(epoch, trainAcc[epoch], trainLosses[epoch], valAcc[epoch], valLosses[epoch]))
+            print("Epoch {} | Train rootMSE: {:.10f}, Train loss: {:.10f} | Validation rootMSE: {:.10f}, Validation loss: {:.10f}".format(epoch, trainAcc[epoch], trainLosses[epoch], valAcc[epoch], valLosses[epoch]))
 
     if draw: drawResults(modelpath, iters, trainLosses, valLosses, trainAcc, valAcc)
     return(iters, trainLosses, valLosses, trainAcc, valAcc)
@@ -352,36 +348,4 @@ dictPath = "saved/splitData/trainData"  # NOTE: DICT PATH IS THE SAME AS WAS IN 
 inPath   = "data/working-wheat-data/cv2_Canny_100_200"  # ONLY THE IMAGE DIRECTORY HAS CHANGED
 
 prevImages(dataPath=dictPath, imgFolder=inPath)
-"""
-
-"""
-# BASE CODE FOR a neural net module to push into trainNet class
-class exNetClass(nn.Module):
-    def __init__(self, name):
-        super(exNetClass, self).__init__()
-        self.name = name
-
-        self.conv1 = nn.Conv2d(3,   15,  6, stride=2)  # n = 1024 -> 510
-        self.conv2 = nn.Conv2d(15,  30,  6, stride=2)  # n = 510  -> 255
-        self.pool1 = nn.MaxPool2d(3, 2)                # n = 255  -> 127
-        self.conv3 = nn.Conv2d(30,  60,  6, stride=2)  # n = 127  -> 62
-        self.pool2 = nn.MaxPool2d(4, 2)                # n = 62   -> 30
-
-        self.fc1   = nn.Linear(29*29*60, 20)
-        self.fc2   = nn.Linear(20, 1)
-
-    def forward(self, x):
-        x = self.pool1(F.relu(self.conv1(x)))
-        x = F.relu(self.conv2(x))
-        x = self.pool2(F.relu(self.conv3(x)))
-        x = x.view(-1, 29*29*60)
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)
-        return(x)
-
-
-batchsize=64; lr=0.001; epochNo=10
-trainLoader, valLoader, _ = loadData(batchsize)
-netA = exNetClass("netA"); netA.cuda()
-netATrain = trainNet(netA, [trainLoader, valLoader], batchsize, epochNo, lr, isCuda=1)
 """
