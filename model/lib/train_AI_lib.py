@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.data as utilData
 import torchvision
+import torchvision.models
 import matplotlib.pyplot as plt
 import cv2
 import os
