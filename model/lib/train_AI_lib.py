@@ -226,7 +226,7 @@ def evalRegress(net, loader, criterion, optimizer, isTraining, gpu=1):
     """
     lossTot = 0
     for img, noBbox, _, _ in loader:  # if isTraining, computing loss and training, if not, then computing loss
-        if gpu and torch.cuda.is_available(): img = img.cuda(); noBbox = noBbox.cuda();
+        if gpu and torch.cuda.is_available(): img = img.cuda(); noBbox = noBbox.cuda()
         noBbox = noBbox.float(); img = img.float()
         pred = net(img); pred=torch.squeeze(pred, 1)
         loss = criterion(pred, noBbox); lossTot += loss
@@ -290,15 +290,21 @@ def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAda
         trainResults = evaluate(net=net, loader=trainData, criterion=criterion, optimizer=optimizer, isTraining=True , gpu=isCuda)  # Calculating training error and loss
         valResults   = evaluate(net=net, loader=  valData, criterion=criterion, optimizer=optimizer, isTraining=False, gpu=isCuda)
 
-        if isCuda and torch.cuda.is_available(): end.record; torch.cuda.synchronize()
+        if isCuda and torch.cuda.is_available(): end.record(); torch.cuda.synchronize()
 
         trainLosses += [trainResults[0]]; trainAcc += [trainResults[1]]  # Appending results
         valLosses   += [  valResults[0]]; valAcc   += [  valResults[1]]
         torch.save(net.state_dict(), modelpath+"model_epoch{}".format(epoch))
 
-        print("Epoch {} | Time Taken: {:.2f}s | Train acc: {:.10f},\
+        if isCuda and torch.cuda.is_available():
+            print("Epoch {} | Time Taken: {:.2f}s | Train acc: {:.10f},\
                 Train loss: {:.10f} | Validation acc: {:.10f}, Validation loss: {:.10f}\
                 ".format(epoch, start.elapsed_time(end)*0.001, trainAcc[epoch], trainLosses[epoch], valAcc[epoch], valLosses[epoch]))
+
+        else: 
+            print("Epoch {} | Train acc: {:.10f},\
+                Train loss: {:.10f} | Validation acc: {:.10f}, Validation loss: {:.10f}\
+                ".format(epoch, trainAcc[epoch], trainLosses[epoch], valAcc[epoch], valLosses[epoch]))
 
     if draw: drawResults(modelpath, iters, trainLosses, valLosses, trainAcc, valAcc)
     return(iters, trainLosses, valLosses, trainAcc, valAcc)
