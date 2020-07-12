@@ -134,6 +134,7 @@ class imgLoader(utilData.Dataset):
             dataPath: path to dictionary created by splitData()
             imgPath : path to an image folder; note, as the class functions by looking up the file name, different folder directories can be given
                       with the same dataPath as long as the images in those folders have a the same name as the original folder.
+            alexnet : changes the behaviour of __get__item() depending on if its loading alexnet features
     __len__ :
         Function which is called when one uses the len() function on an imgLoader Object, returns the number of images
     __getitem__(self, idx):
@@ -145,20 +146,26 @@ class imgLoader(utilData.Dataset):
             bboxList: list of bounding boxes as defined as [[bbox1], [bbox2], ...] (for debug purposes)
 
     """
-    def __init__(self, dataPath, imgPath):  # Defining inital variables
+    def __init__(self, dataPath, imgPath, alexNet=0):  # Defining inital variables
         self.imgDict = torch.load(dataPath)
         self.imgPath = imgPath + "/"
         self.keyList = list(self.imgDict.keys())
+        self.alexNet = alexNet
 
     def __len__(self):
         return(len(self.imgDict))
 
     def __getitem__(self, idx):
-        imgName = self.keyList[idx]  # grab the imageName of the given idx
-        img = cv2.imread(self.imgPath+imgName)  # load the image from file
-        # transform the file into a tensor, convert into a float
-        transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
-        img = transform(img).float()
+        if not self.alexNet:
+            imgName = self.keyList[idx]  # grab the imageName of the given idx
+            img = cv2.imread(self.imgPath+imgName)  # load the image from file
+            # transform the file into a tensor, convert into a float
+            transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+            img = transform(img).float()
+
+        if self.alexNet:
+            imgName = self.keyList[idx]
+            img  = torch.squeeze(torch.load(self.imgPath+imgName.split('.jpg')[0]), 0)
 
         # return FOUR things, as described above.
         return(img,  float(len(self.imgDict[imgName])), imgName, self.imgDict[imgName])
@@ -189,7 +196,7 @@ def drawResults(modelpath, iters, trainLosses, valLosses, trainAcc, valAcc):
     plt.savefig(modelpath+"Loss Graph.png")
     plt.show()
 
-def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-wheat-data/train"):
+def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-wheat-data/train", alexNet=0):
     """
     Function to quickly batch generate a DataLoader
     Arguments:
@@ -197,12 +204,13 @@ def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-whe
         dataPath : path to dictionary created by splitData()
         inPath   : path to an image folder; note, as the class functions by looking up the file name, different folder directories can be given
                       with the same dataPath as long as the images in those folders have a the same name as the original folder.
+        alexnet  : bool to pass into imgLoader, to tell it that it if it is loading alexnet features
     Returns:
         trainLoader, valLoder, testLoader: The DataLoaders batched as reqested
     """
-    trainData = imgLoader(dictPath+"/trainData", inPath)
-    valData   = imgLoader(dictPath+"/valData"  , inPath)
-    testData  = imgLoader(dictPath+"/testData" , inPath)
+    trainData = imgLoader(dictPath+"/trainData", inPath, alexNet=alexNet)
+    valData   = imgLoader(dictPath+"/valData"  , inPath, alexNet=alexNet)
+    testData  = imgLoader(dictPath+"/testData" , inPath, alexNet=alexNet)
 
     trainLoader = utilData.DataLoader(trainData, batch_size=batchsize, shuffle=1)
     valLoader   = utilData.DataLoader(valData  , batch_size=batchsize, shuffle=1)
@@ -305,10 +313,19 @@ def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAda
     if draw: drawResults(modelpath, iters, trainLosses, valLosses, trainAcc, valAcc)
     return(iters, trainLosses, valLosses, trainAcc, valAcc)
 
-def setDirectory(path='..'):
-    print("Current Directory: {}".format(os.getcwd()))
-    os.chdir(path)
-    print("New Directory: {}".format(os.getcwd()))
+def calcNoParam(net):
+    """
+    Function to quickly find the number of total paramters of a net
+    Parmeters:
+        net: the neural net object
+    """
+    n = 0
+    for param in net.parameters():
+        a = 1
+        for x in param.size():
+            a *= x
+        n+=a
+    print(n)
 
 """ Eg (1) IGNORE
 ### Use example for imageLoader
