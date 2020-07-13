@@ -280,13 +280,13 @@ def evalRegress(net, loader, criterion, optimizer, isTraining, gpu=1):
         if gpu and torch.cuda.is_available(): img = img.cuda(); noBbox = noBbox.cuda()
         noBbox = noBbox.float(); img = img.float()
         pred = net(img); pred=torch.squeeze(pred, 1)
-        loss = criterion(pred, noBbox); lossTot += loss
+        loss = criterion(pred, noBbox); lossTot += float(loss)
         if isTraining:
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
 
-    accuracy = torch.sqrt(lossTot/len(loader))
+    accuracy = np.sqrt(lossTot/len(loader))
     avgLoss = lossTot/len(loader)
     return(avgLoss, accuracy)
 
@@ -296,13 +296,13 @@ def evalAutoEnc(net, loader, criterion, optimizer, isTraining, gpu=1):
         if gpu and torch.cuda.is_available(): img = img.cuda(); compImg = compImg.cuda()
         compImg = compImg.float(); img = img.float()
         pred = net(img)
-        loss = criterion(pred, compImg); lossTot += loss
+        loss = criterion(pred, compImg); lossTot += float(loss)
         if isTraining:
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
 
-    accuracy = torch.sqrt(lossTot/len(loader))
+    accuracy = np.sqrt(lossTot/len(loader))
     avgLoss = lossTot/len(loader)
     return(avgLoss, accuracy)
 
