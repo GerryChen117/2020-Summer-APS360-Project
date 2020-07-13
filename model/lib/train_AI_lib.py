@@ -175,29 +175,43 @@ class imgLoader(utilData.Dataset):
             bboxList: list of bounding boxes as defined as [[bbox1], [bbox2], ...] (for debug purposes)
 
     """
-    def __init__(self, dataPath, imgPath, alexNet=0):  # Defining inital variables
+    def __init__(self, dataPath, imgPath, mode='default', altArg={}):  # Defining inital variables
         self.imgDict = torch.load(dataPath)
         self.imgPath = imgPath + "/"
         self.keyList = list(self.imgDict.keys())
-        self.alexNet = alexNet
+        self.mode    = mode
+        self.altArg  = altArg
 
     def __len__(self):
         return(len(self.imgDict))
 
     def __getitem__(self, idx):
-        if not self.alexNet:
+        if self.mode == 'default':
             imgName = self.keyList[idx]  # grab the imageName of the given idx
             img = cv2.imread(self.imgPath+imgName)  # load the image from file
             # transform the file into a tensor, convert into a float
             transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
             img = transform(img).float()
+          
+            # return FOUR things, as described above.
+            return(img,  float(len(self.imgDict[imgName])), imgName, self.imgDict[imgName])
 
-        if self.alexNet:
+        elif self.mode == 'alex':
             imgName = self.keyList[idx]
             img  = torch.squeeze(torch.load(self.imgPath+imgName.split('.jpg')[0]), 0)
+            
+            # return FOUR things, as described above.
+            return(img,  float(len(self.imgDict[imgName])), imgName, self.imgDict[imgName])
 
-        # return FOUR things, as described above.
-        return(img,  float(len(self.imgDict[imgName])), imgName, self.imgDict[imgName])
+        elif self.mode == 'auto':
+            imgName = self.keyList[idx]
+            img     = cv2.imread(self.imgPath+imgName)
+            compImg = cv2.imread(self.altArg['path']+'/'+imgName)
+            transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+            img = transform(img).float()
+            compImg = transform(compImg).float()
+            return(img, compImg, imgName)
+
 
 def drawResults(modelpath, iters, trainLosses, valLosses, trainAcc, valAcc):
     """
@@ -225,7 +239,7 @@ def drawResults(modelpath, iters, trainLosses, valLosses, trainAcc, valAcc):
     plt.savefig(modelpath+"Loss Graph.png")
     plt.show()
 
-def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-wheat-data/train", alexNet=0):
+def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-wheat-data/train", mode='default', altArg={}):
     """
     Function to quickly batch generate a DataLoader
     Arguments:
@@ -237,9 +251,9 @@ def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-whe
     Returns:
         trainLoader, valLoder, testLoader: The DataLoaders batched as reqested
     """
-    trainData = imgLoader(dictPath+"/trainData", inPath, alexNet=alexNet)
-    valData   = imgLoader(dictPath+"/valData"  , inPath, alexNet=alexNet)
-    testData  = imgLoader(dictPath+"/testData" , inPath, alexNet=alexNet)
+    trainData = imgLoader(dictPath+"/trainData", inPath, mode=mode, altArg=altArg)
+    valData   = imgLoader(dictPath+"/valData"  , inPath, mode=mode, altArg=altArg)
+    testData  = imgLoader(dictPath+"/testData" , inPath, mode=mode, altArg=altArg)
 
     trainLoader = utilData.DataLoader(trainData, batch_size=batchsize, shuffle=1)
     valLoader   = utilData.DataLoader(valData  , batch_size=batchsize, shuffle=1)
@@ -272,18 +286,27 @@ def evalRegress(net, loader, criterion, optimizer, isTraining, gpu=1):
             optimizer.step()
             optimizer.zero_grad()
 
-    ''' Redundent
-    for img, noBbox, _, _ in loader:  # Computing accuracy
-        if gpu and torch.cuda.is_available: img = img.cuda(); noBbox = noBbox.cuda()
+    accuracy = torch.sqrt(lossTot/len(loader))
+    avgLoss = lossTot/len(loader)
+    return(avgLoss, accuracy)
+
+def evalAutoEnc(net, loader, criterion, optimizer, isTraining, gpu=1):
+    lossTot = 0
+    for img, compImg, imgName in loader:  # if isTraining, computing loss and training, if not, then computing loss
+        if gpu and torch.cuda.is_available(): img = img.cuda(); compImg = compImg.cuda()
+        compImg = compImg.float(); img = img.float()
         pred = net(img)
-        acc += [torch.sum((pred-noBbox)**2)]
-    '''
+        loss = criterion(pred, compImg); lossTot += loss
+        if isTraining:
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
 
     accuracy = torch.sqrt(lossTot/len(loader))
     avgLoss = lossTot/len(loader)
     return(avgLoss, accuracy)
 
-def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAdam', evaluate=evalRegress, isCuda=1, draw=1):
+def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAdam', isCuda=1, draw=1):
     """
     Big boy function that actually brings all of the function above together and actually trains the model
     Arguments:
@@ -305,7 +328,14 @@ def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAda
         # Define criterion and optimizers
         criterion = nn.MSELoss()
         optimizer = torch.optim.Adam(net.parameters(), lr=lr)
+        evaluate = evalRegress
         functionName = "RegAdamTrainer"  # Name of the function used (incase we decide to use different optimizers, use alexnet etc)
+
+    elif trainType == 'AutoEnc':
+        criterion = nn.MSELoss()
+        optimizer = torch.optim.Adam(net.parameters(), lr=lr)
+        evaluate  = evalAutoEnc
+        functionName = "AutoEncTrainer"
 
     modelpath = oPath+"/TrainingRuns/{}/{}_b{}_te{}_lr{}/".format(functionName, net.name, batchsize, epochNo, lr)
     torch.manual_seed(1000)
