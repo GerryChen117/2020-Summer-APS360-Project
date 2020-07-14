@@ -261,7 +261,7 @@ def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-whe
 
     return(trainLoader, valLoader, testLoader)
 
-def evalRegress(net, loader, criterion, optimizer, isTraining, gpu=1):
+def evalRegress(net, loader, criterion, optimizer, isTraining, gpu=1, noBatches=0):
     """
     Function used in trainNet() to evaluate a given net for one epoch
     Arguments:
@@ -276,7 +276,7 @@ def evalRegress(net, loader, criterion, optimizer, isTraining, gpu=1):
         avgLoss : The calculated average loss over the entire epoch
     """
     lossTot = 0
-    for img, noBbox, _, _ in loader:  # if isTraining, computing loss and training, if not, then computing loss
+    for i, (img, noBbox, _, _) in enumerate(loader):  # if isTraining, computing loss and training, if not, then computing loss
         if gpu and torch.cuda.is_available(): img = img.cuda(); noBbox = noBbox.cuda()
         noBbox = noBbox.float(); img = img.float()
         pred = net(img); pred=torch.squeeze(pred, 1)
@@ -285,14 +285,16 @@ def evalRegress(net, loader, criterion, optimizer, isTraining, gpu=1):
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
+        
+        if noBatches!=0 and i==noBatches: break
 
     accuracy = np.sqrt(lossTot/len(loader))
     avgLoss = lossTot/len(loader)
     return(avgLoss, accuracy)
 
-def evalAutoEnc(net, loader, criterion, optimizer, isTraining, gpu=1):
+def evalAutoEnc(net, loader, criterion, optimizer, isTraining, gpu=1, noBatches=0):
     lossTot = 0
-    for img, compImg, imgName in loader:  # if isTraining, computing loss and training, if not, then computing loss
+    for i, (img, compImg, imgName) in enumerate(loader):  # if isTraining, computing loss and training, if not, then computing loss
         if gpu and torch.cuda.is_available(): img = img.cuda(); compImg = compImg.cuda()
         compImg = compImg.float(); img = img.float()
         pred = net(img)
@@ -301,6 +303,8 @@ def evalAutoEnc(net, loader, criterion, optimizer, isTraining, gpu=1):
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
+        
+        if noBatches!=0 and i==noBatches: break
 
     accuracy = np.sqrt(lossTot/len(loader))
     avgLoss = lossTot/len(loader)
@@ -329,12 +333,14 @@ def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAda
         criterion = nn.MSELoss()
         optimizer = torch.optim.Adam(net.parameters(), lr=lr)
         evaluate = evalRegress
+        minibatch = 0
         functionName = "RegAdamTrainer"  # Name of the function used (incase we decide to use different optimizers, use alexnet etc)
 
     elif trainType == 'AutoEnc':
         criterion = nn.MSELoss()
         optimizer = torch.optim.Adam(net.parameters(), lr=lr)
         evaluate  = evalAutoEnc
+        minibatch = 10
         functionName = "AutoEncTrainer"
 
     modelpath = oPath+"/TrainingRuns/{}/{}_b{}_te{}_lr{}/".format(functionName, net.name, batchsize, epochNo, lr)
@@ -355,8 +361,8 @@ def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAda
         if isCuda and torch.cuda.is_available(): start.record()
         iters += [epoch]
         #evaluate(net=net, loader=trainData, criterion=criterion, optimizer=optimizer, isTraining=True)
-        trainResults = evaluate(net=net, loader=trainData, criterion=criterion, optimizer=optimizer, isTraining=True , gpu=isCuda)  # Calculating training error and loss
-        valResults   = evaluate(net=net, loader=  valData, criterion=criterion, optimizer=optimizer, isTraining=False, gpu=isCuda)
+        trainResults = evaluate(net=net, loader=trainData, criterion=criterion, optimizer=optimizer, isTraining=True , gpu=isCuda, noBatches=0)  # Calculating training error and loss
+        valResults   = evaluate(net=net, loader=  valData, criterion=criterion, optimizer=optimizer, isTraining=False, gpu=isCuda, noBatches=minibatch)
 
         if isCuda and torch.cuda.is_available(): end.record(); torch.cuda.synchronize()
 
