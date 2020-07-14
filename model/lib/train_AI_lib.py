@@ -147,72 +147,93 @@ class imgLoader(utilData.Dataset):
             bboxList: list of bounding boxes as defined as [[bbox1], [bbox2], ...] (for debug purposes)
 
     """
-    def __init__(self, dataPath, imgPath, tempPath, mode, altArg):  # Defining inital variables
+    def __init__(self, dataPath, imgPath, tempPath, mode, altArg, preCalc):  # Defining inital variables
         self.imgDict  = torch.load(dataPath)
         self.imgPath  = imgPath  + "/"
         self.tempPath = tempPath + '/'
         self.mode     = mode
         self.altArg   = altArg
+        self.preCalc  = preCalc
 
-        try: os.makedirs(self.tempPath)  # Make the directory
-        except FileExistsError: None
-        except: print("Error Creating File"); return()
-        else: None
-
-        if self.mode == 'default':
-            for i, imgName in enumerate(list(self.imgDict.keys())):
-                if not os.path.isfile(self.tempPath+imgName.split('.jpg')[0]):
-                    img   = cv2.imread(self.imgPath+imgName)
-                    trans = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
-                    img   = trans(img).float()
-                    torch.save(img, self.tempPath+imgName.split('.jpg')[0])
-                    if i%150==0: print('Converted {:.2f}%'.format(100*i/len(self.imgDict)))
-
-        elif self.mode == 'tensor':
-            alexnet = torchvision.models.alexnet(pretrained=True); alexnet.cuda()
-            for i, imgName in enumerate(list(self.imgDict.keys())):
-                if not os.path.isfile(self.tempPath+imgName.split('.jpg')[0]):
-                    img = cv2.imread(self.imgPath+imgName)
-                    transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
-                    img = transform(img).float()
-                    img = alexnet.features(torch.unsqueeze(img, 0).cuda())
-                    torch.save(img.detach().cpu(), self.tempPath+imgName.split('.jpg')[0])
-                    if i%100 == 0: print("Converted {:.2f}%".format(100*i/len(self.imgDict)))
-
-        elif self.mode == 'auto':
-            for i, imgName in enumerate(list(self.imgDict.keys())):
-                if not os.path.isfile(self.tempPath+imgName.split('.jpg')[0]):
-                    img       = cv2.imread(self.imgPath+imgName)
-                    compImg   = cv2.imread(self.altArg['compPath']+'/'+imgName)
-                    transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
-                    img       = transform(img).float()
-                    compImg   = transform(compImg).float()
-                    torch.save({'img': img, 'compImg': compImg}, self.tempPath+imgName.split('.jpg')[0])
-                    if i%150==0: print('Converted {:.2f}%'.format(100*i/len(self.imgDict)))
+        if self.preCalc==1:
+            try: os.makedirs(self.tempPath)  # Make the directory
+            except FileExistsError: None
+            except: print("Error Creating File"); return()
+            else: None
         
-        else: print('ERROR: UNSUPPORTED MODE IN IMAGE LOADER'); return
+            if self.mode == 'default':
+                for i, imgName in enumerate(list(self.imgDict.keys())):
+                    if not os.path.isfile(self.tempPath+imgName.split('.jpg')[0]):
+                        img   = cv2.imread(self.imgPath+imgName)
+                        trans = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+                        img   = trans(img).float()
+                        torch.save(img, self.tempPath+imgName.split('.jpg')[0])
+                        if i%150==0: print('Converted {:.2f}%'.format(100*i/len(self.imgDict)))
+
+            elif self.mode == 'tensor':
+                alexnet = torchvision.models.alexnet(pretrained=True); alexnet.cuda()
+                for i, imgName in enumerate(list(self.imgDict.keys())):
+                    if not os.path.isfile(self.tempPath+imgName.split('.jpg')[0]):
+                        img = cv2.imread(self.imgPath+imgName)
+                        transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+                        img = transform(img).float()
+                        img = torch.squeeze(alexnet.features(torch.unsqueeze(img, 0).cuda()), 0)
+                        torch.save(img.detach().cpu(), self.tempPath+imgName.split('.jpg')[0])
+                        if i%100 == 0: print("Converted {:.2f}%".format(100*i/len(self.imgDict)))
+
+            elif self.mode == 'auto':
+                for i, imgName in enumerate(list(self.imgDict.keys())):
+                    if not os.path.isfile(self.tempPath+imgName.split('.jpg')[0]):
+                        img       = cv2.imread(self.imgPath+imgName)
+                        compImg   = cv2.imread(self.altArg['compPath']+'/'+imgName)
+                        transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+                        img       = transform(img).float()
+                        compImg   = transform(compImg).float()
+                        torch.save({'img': img, 'compImg': compImg}, self.tempPath+imgName.split('.jpg')[0])
+                        if i%150==0: print('Converted {:.2f}%'.format(100*i/len(self.imgDict)))
+            
+            else: print('ERROR: UNSUPPORTED MODE IN IMAGE LOADER'); return
 
     def __len__(self):
         return(len(self.imgDict))
 
     def __getitem__(self, idx):
+        trans = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
         imgName = list(self.imgDict.keys())[idx]
-        if self.mode == 'default':
+
+        if self.preCalc==0:
+            if self.mode == 'default':
+                img = cv2.imread(self.imgPath+imgName)
+                img = trans(img).float()
+
+            elif self.mode == 'tensor':
+                alexnet = torchvision.models.alexnet(pretrained=True); alexnet.cuda()
+                img = cv2.imread(self.imgPath+imgName)
+                img = transform(img).float()
+                img = torch.squeeze(alexnet.features(torch.unsqueeze(img, 0).cuda()), 0)
+                img = img.detach().cpu()
+            
+            elif self.mode == 'auto':
+                img     = cv2.imread(self.imgPath+imgName)
+                compImg = cv2.imread(self.altArg['compPath']+'/'+imgName)
+                img     = trans(img).float()
+                compImg = trans(compImg).float()
+
+        elif self.preCalc==1:
             img = torch.load(self.tempPath+imgName.split('.jpg')[0])
+
+        if self.mode == 'default':
             return(img,  float(len(self.imgDict[imgName])), imgName, self.imgDict[imgName])
 
         elif self.mode == 'tensor':
-            img  = torch.squeeze(torch.load(self.tempPath+imgName.split('.jpg')[0]), 0)
             return(img,  float(len(self.imgDict[imgName])), imgName, self.imgDict[imgName])
 
         elif self.mode == 'auto':
-            data = torch.load(self.tempPath+imgName.split('.jpg')[0])
-            img = data['img']; compImg = data['compImg']
             return(img, compImg, imgName)
 
         else: print('ERROR: UNSUPPORTED MODE IN IMAGE LOADER'); return
 
-def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-wheat-data/train", tempPath='temp/default', mode='default', altArg={}):
+def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-wheat-data/train", tempPath='temp/default', mode='default', altArg={}, preCalc=1):
     """
     Function to quickly batch generate a DataLoader
     Arguments:
@@ -225,13 +246,13 @@ def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-whe
         trainLoader, valLoder, testLoader: The DataLoaders batched as reqested
     """
 
-    print('Converting Training Images')
-    trainData = imgLoader(dataPath=dictPath+"/trainData", imgPath=inPath, tempPath=tempPath, mode=mode, altArg=altArg)
-    print('Converting Validation Images')
-    valData   = imgLoader(dataPath=dictPath+"/valData"  , imgPath=inPath, tempPath=tempPath, mode=mode, altArg=altArg)
-    print('Converting Testing Images')
-    testData  = imgLoader(dataPath=dictPath+"/testData" , imgPath=inPath, tempPath=tempPath, mode=mode, altArg=altArg)
-    print('Converting Complete')
+    if preCalc: print('Converting Training Images')
+    trainData = imgLoader(dataPath=dictPath+"/trainData", imgPath=inPath, tempPath=tempPath, mode=mode, altArg=altArg, preCalc=preCalc)
+    if preCalc: print('Converting Validation Images')
+    valData   = imgLoader(dataPath=dictPath+"/valData"  , imgPath=inPath, tempPath=tempPath, mode=mode, altArg=altArg, preCalc=preCalc)
+    if preCalc: print('Converting Testing Images')
+    testData  = imgLoader(dataPath=dictPath+"/testData" , imgPath=inPath, tempPath=tempPath, mode=mode, altArg=altArg, preCalc=preCalc)
+    if preCalc: print('Converting Complete')
 
     trainLoader = utilData.DataLoader(trainData, batch_size=batchsize, shuffle=1)
     valLoader   = utilData.DataLoader(valData  , batch_size=batchsize, shuffle=1)
