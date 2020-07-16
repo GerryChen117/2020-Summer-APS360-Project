@@ -377,7 +377,7 @@ def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAda
         functionName = "RegAdamTrainer"  # Name of the function used (incase we decide to use different optimizers, use alexnet etc)
 
     elif trainType == 'AutoEnc':
-        criterion = nn.MSELoss()
+        criterion = nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(net.parameters(), lr=lr)
         evaluate  = evalAutoEnc
         minibatch = 10
