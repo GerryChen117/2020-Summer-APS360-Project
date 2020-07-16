@@ -127,6 +127,17 @@ def openCVImgConvert(func, oPath, iPath="data/working-wheat-data/train"):
         if i%200==0: print("Converted {:.2f}% of images".format(100*i/len(files)))
     print("Finished Conversion of Images")
 
+def createMask(bboxes, imgRes=(1024, 2014)):
+    globalMask = np.zeros(imgRes, dtype=bool)
+    for bbox in bboxes:
+        oneMask = np.zeros(imgRes, dtype=bool)
+        bbox = [int(number) for number in bbox]
+        # Don't ask me why this flip works, numpy and cv2 take images in differently and it's a pain to try and figure out the transformations    
+        oneMask[bbox[0]:(bbox[0]+bbox[2]), imgRes[1]-(bbox[1]+bbox[3]):imgRes[1]-bbox[1]] = np.ones((bbox[2], bbox[3]), dtype=bool)
+        globalMask = np.bitwise_or(globalMask, oneMask)
+    globalMask = np.rot90(globalMask, 1)
+    return(globalMask)
+
 class imgLoader(utilData.Dataset):
     """
     Custom pytorch dataset for loading images
@@ -164,9 +175,12 @@ class imgLoader(utilData.Dataset):
             if self.mode == 'default':
                 for i, imgName in enumerate(list(self.imgDict.keys())):
                     if not os.path.isfile(self.tempPath+imgName.split('.jpg')[0]):
+                        '''
                         img   = cv2.imread(self.imgPath+imgName)
                         trans = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
                         img   = trans(img).float()
+                        '''
+                        img = self.convertImg(imgName)
                         torch.save(img, self.tempPath+imgName.split('.jpg')[0])
                         if i%150==0: print('Converted {:.2f}%'.format(100*i/len(self.imgDict)))
 
@@ -174,21 +188,20 @@ class imgLoader(utilData.Dataset):
                 alexnet = torchvision.models.alexnet(pretrained=True); alexnet.cuda()
                 for i, imgName in enumerate(list(self.imgDict.keys())):
                     if not os.path.isfile(self.tempPath+imgName.split('.jpg')[0]):
+                        '''
                         img = cv2.imread(self.imgPath+imgName)
                         transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
                         img = transform(img).float()
                         img = torch.squeeze(alexnet.features(torch.unsqueeze(img, 0).cuda()), 0)
-                        torch.save(img.detach().cpu(), self.tempPath+imgName.split('.jpg')[0])
+                        '''
+                        img = self.convertImg(imgName)
+                        torch.save(img, self.tempPath+imgName.split('.jpg')[0])
                         if i%100 == 0: print("Converted {:.2f}%".format(100*i/len(self.imgDict)))
 
             elif self.mode == 'auto':
                 for i, imgName in enumerate(list(self.imgDict.keys())):
                     if not os.path.isfile(self.tempPath+imgName.split('.jpg')[0]):
-                        img       = cv2.imread(self.imgPath+imgName)
-                        compImg   = cv2.imread(self.altArg['compPath']+'/'+imgName)
-                        transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
-                        img       = transform(img).float()
-                        compImg   = transform(compImg).float()
+                        img, compImg = self.convertImg(imgName) 
                         torch.save({'img': img, 'compImg': compImg}, self.tempPath+imgName.split('.jpg')[0])
                         if i%150==0: print('Converted {:.2f}%'.format(100*i/len(self.imgDict)))
             
@@ -202,6 +215,10 @@ class imgLoader(utilData.Dataset):
         imgName = list(self.imgDict.keys())[idx]
 
         if self.preCalc==0:
+            if   self.mode == 'default': img = self.convertImg(imgName)
+            elif self.mode == 'tensor' : img = self.convertImg(imgName)
+            elif self.mode == 'auto'   : img, compImg = self.convertImg(imgName) 
+            '''
             if self.mode == 'default':
                 img = cv2.imread(self.imgPath+imgName)
                 img = trans(img).float().detach()
@@ -218,6 +235,7 @@ class imgLoader(utilData.Dataset):
                 compImg = cv2.imread(self.altArg['compPath']+'/'+imgName)
                 img     = trans(img).float().detach()
                 compImg = trans(compImg).float().detach()
+            '''
 
         elif self.preCalc==1:
             img = torch.load(self.tempPath+imgName.split('.jpg')[0])
@@ -232,6 +250,29 @@ class imgLoader(utilData.Dataset):
             return(img, compImg, imgName)
 
         else: print('ERROR: UNSUPPORTED MODE IN IMAGE LOADER'); return
+
+    def convertImg(self, imgName):
+        trans = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+        img = cv2.imread(self.imgPath+imgName)
+        if self.mode == 'default':
+            img = trans(img).float().detach()
+
+            return(img)
+
+        elif self.mode == 'tensor':
+            alexnet = torchvision.models.alexnet(pretrained=True); alexnet.cuda()
+            img = transform(img).float()
+            img = torch.squeeze(alexnet.features(torch.unsqueeze(img, 0).cuda()), 0)
+            img = img.detach().cpu()
+
+            return(img)
+
+        elif self.mode == 'auto':
+            compImg = createMask(self.imgDict[imgName]).copy()
+            img     = trans(img).float().detach()
+            compImg = trans(compImg).float().detach()
+
+            return(img, compImg)
 
 def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-wheat-data/train", tempPath='temp/default', mode='default', altArg={}, preCalc=1):
     """
