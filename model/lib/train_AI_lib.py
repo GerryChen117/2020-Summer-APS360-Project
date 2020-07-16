@@ -204,7 +204,7 @@ class imgLoader(utilData.Dataset):
         if self.preCalc==0:
             if self.mode == 'default':
                 img = cv2.imread(self.imgPath+imgName)
-                img = trans(img).float()
+                img = trans(img).float().detach()
 
             elif self.mode == 'tensor':
                 alexnet = torchvision.models.alexnet(pretrained=True); alexnet.cuda()
@@ -216,8 +216,8 @@ class imgLoader(utilData.Dataset):
             elif self.mode == 'auto':
                 img     = cv2.imread(self.imgPath+imgName)
                 compImg = cv2.imread(self.altArg['compPath']+'/'+imgName)
-                img     = trans(img).float()
-                compImg = trans(compImg).float()
+                img     = trans(img).float().detach()
+                compImg = trans(compImg).float().detach()
 
         elif self.preCalc==1:
             img = torch.load(self.tempPath+imgName.split('.jpg')[0])
