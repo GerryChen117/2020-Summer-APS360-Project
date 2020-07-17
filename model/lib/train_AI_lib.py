@@ -277,6 +277,8 @@ def evalRegress(net, loader, criterion, optimizer, isTraining, gpu=1, noBatches=
         avgLoss : The calculated average loss over the entire epoch
     """
     lossTot = 0
+    correct = 0
+    total   = 0
     for i, (img, noBbox, _, _) in enumerate(loader):  # if isTraining, computing loss and training, if not, then computing loss
         if gpu and torch.cuda.is_available(): img = img.cuda();  noBbox = noBbox.cuda()
         img = img.float(); noBbox = noBbox.float()
@@ -288,9 +290,33 @@ def evalRegress(net, loader, criterion, optimizer, isTraining, gpu=1, noBatches=
             optimizer.zero_grad()
     
         if noBatches!=0 and i==noBatches: break
+        correct += torch.round(pred).eq(noBbox.view_as(pred)).sum().item()
+        total   += noBbox.size()[0]
 
-    accuracy = np.sqrt(lossTot/len(loader))
-    avgLoss = lossTot/len(loader)
+    accuracy = 1-(correct/total)
+    avgLoss = np.sqrt(lossTot/len(loader))
+    return(avgLoss, accuracy)
+
+def discEvalReg(net, loader, criterion, optimizer, isTraining, gpu=1, noBatches=0):
+    lossTot = 0
+    correct = 0
+    total   = 0
+    for i, (img, noBbox, _, _) in enumerate(loader):  # if isTraining, computing loss and training, if not, then computing loss
+        if gpu and torch.cuda.is_available(): img = img.cuda();  noBbox = noBbox.cuda()
+        img = img.float(); noBbox = noBbox.float()
+        pred = net(img); pred=torch.squeeze(pred, 1); pred = torch.round(pred)
+        loss = criterion(pred, noBbox); lossTot += float(loss)
+        if isTraining:
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+    
+        if noBatches!=0 and i==noBatches: break
+        correct += pred.eq(noBbox.view_as(pred)).sum().item()
+        total   += noBbox.size()[0]
+
+    accuracy = 1-(correct/total)
+    avgLoss = np.sqrt(lossTot/len(loader))
     return(avgLoss, accuracy)
 
 def evalAutoEnc(net, loader, criterion, optimizer, isTraining, gpu=1, noBatches=0):
@@ -329,7 +355,7 @@ def evalAutoEnc(net, loader, criterion, optimizer, isTraining, gpu=1, noBatches=
         total   += compImg.size()[0]*compImg.size()[1]*compImg.size()[2]
 
     accuracy = 1-(correct/total)
-    avgLoss  = lossTot/len(loader)
+    avgLoss  = np.sqrt(lossTot/len(loader))
     return(avgLoss, accuracy)
 
 def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAdam', isCuda=1, draw=1):
@@ -357,6 +383,14 @@ def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAda
         evaluate     = evalRegress
         minibatch    = 0
         functionName = "RegAdamTrainer"  # Name of the function used (incase we decide to use different optimizers, use alexnet etc)
+    
+    elif trainType == 'discRegAdam':
+        # Define criterion and optimizers
+        criterion    = nn.MSELoss()
+        optimizer    = torch.optim.Adam(net.parameters(), lr=lr)
+        evaluate     = discEvalReg
+        minibatch    = 0
+        functionName = "discRegAdam"  # Name of the function used (incase we decide to use different optimizers, use alexnet etc)
 
     elif trainType == 'auto':
         criterion    = nn.CrossEntropyLoss()
@@ -366,7 +400,7 @@ def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAda
         functionName = "AutoEncTrainer"
 
     modelpath = oPath+"/TrainingRuns/{}/{}_b{}_te{}_lr{}/".format(functionName, net.name, batchsize, epochNo, lr)
-    torch.manual_seed(1000)
+    torch.manual_seed(8000)
     try: os.makedirs(modelpath)  # Make the directory
     except FileExistsError: None
     except: print("Error Creating File"); return()
