@@ -194,34 +194,24 @@ class imgLoader(utilData.Dataset):
                         torch.save({'img': img, 'compImg': compImg}, self.tempPath+imgName.split('.jpg')[0])
                         if i%150==0: print('Converted {:.2f}%'.format(100*i/len(self.imgDict)))
             
-            elif self.mode == 'semi':
-                for i, imgName in enumerate(list(self.imgDict.keys())):
-                    if not os.path.isfile(self.tempPath+imgName.split('.jpg')[0]):
-                        img = self.convertImg(imgName)
-                        torch.save(img, self.tempPath+imgName.split('.jpg')[0])
-                        if i%150==0: print('Converted {:.2f}%'.format(100*i/len(self.imgDict)))
-            
             else: print('ERROR: UNSUPPORTED MODE IN IMAGE LOADER'); return
 
     def __len__(self):
         return(len(self.imgDict))
 
     def __getitem__(self, idx):
-        trans = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
         imgName = list(self.imgDict.keys())[idx]
 
         if self.preCalc==0:
             if   self.mode == 'default': img = self.convertImg(imgName)
             elif self.mode == 'tensor' : img = self.convertImg(imgName)
             elif self.mode == 'auto'   : img, compImg = self.convertImg(imgName) 
-            elif self.mode == 'semi'   : img = self.convertImg(imgName)
 
         elif self.preCalc==1: img = torch.load(self.tempPath+imgName.split('.jpg')[0])
 
         if self.mode == 'default' : return(img,  float(len(self.imgDict[imgName])), imgName, self.imgDict[imgName])
         elif self.mode == 'tensor': return(img,  float(len(self.imgDict[imgName])), imgName, self.imgDict[imgName])
         elif self.mode == 'auto'  : return(img, compImg, imgName)
-        elif self.mode == 'semi'  : return(img,  float(len(self.imgDict[imgName])), imgName, self.imgDict[imgName])
         
         else: print('ERROR: UNSUPPORTED MODE IN IMAGE LOADER'); return
 
@@ -229,28 +219,21 @@ class imgLoader(utilData.Dataset):
         trans = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
         img = cv2.imread(self.imgPath+imgName)
         if self.mode == 'default':
-            img = trans(img).float().detach()
+            img = trans(img).float()
             return(img)
 
         elif self.mode == 'tensor':
             alexnet = torchvision.models.alexnet(pretrained=True); alexnet.cuda()
-            img = trans(img).float().detach()
+            img = trans(img).float()
             img = torch.squeeze(alexnet.features(torch.unsqueeze(img, 0).cuda()), 0)
             img = img.detach().cpu()
             return(img)
 
         elif self.mode == 'auto':
             compImg = createMask(self.imgDict[imgName]).copy()
-            img     = trans(img).float().detach()
-            compImg = torch.squeeze(trans(compImg).long().detach(), 0)
+            img     = trans(img).float()
+            compImg = torch.squeeze(trans(compImg).long(), 0)
             return(img, compImg)
-
-        elif self.mode == 'semi':
-            img  = trans(img).float().detach().cuda()
-            img = torch.unsqueeze(img, 0)
-            code = self.altArg['enc'].encoder((img)).detach().cpu()
-            code = torch.squeeze(code, 0)
-            return(code)
 
 def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-wheat-data/train", tempPath='temp/default', mode='default', altArg={}, preCalc=1):
     """
@@ -304,7 +287,7 @@ def evalRegress(net, loader, criterion, optimizer, isTraining, gpu=1, noBatches=
             optimizer.step()
             optimizer.zero_grad()
         
-        img = img.detach(); pred = pred.detach(); loss = loss.detach()
+        #img = img.detach(); pred = pred.detach(); loss = loss.detach()
         if noBatches!=0 and i==noBatches: break
 
     accuracy = np.sqrt(lossTot/len(loader))
@@ -312,6 +295,20 @@ def evalRegress(net, loader, criterion, optimizer, isTraining, gpu=1, noBatches=
     return(avgLoss, accuracy)
 
 def evalAutoEnc(net, loader, criterion, optimizer, isTraining, gpu=1, noBatches=0):
+    """
+    Evaluation function used in trainnet to specify the training loop of an auto encoder
+    Arguments:
+        net       : The net object
+        loader    : the loader whose images are being put through the network for evaluation
+        criterion : the criterion function
+        optimizer : the optimizer function
+        isTraining: Boolean to indicate if training should occur with evaluation, if True, optimizer will perform step
+        gpu       : Boolean to indicate if cuda is to be utilized
+        noBatches : the number of batches to iterate though; 0 is maximum of loader
+    Returns:
+        Accuracy: The calculated accuracy over the epoch
+        avgLoss : The calculated average loss over the entire epoch
+    """
     correct = 0
     lossTot = 0
     total   = 0
@@ -331,7 +328,7 @@ def evalAutoEnc(net, loader, criterion, optimizer, isTraining, gpu=1, noBatches=
         pred     = pred.max(1, keepdim=True)[1]
         correct += pred.eq(compImg.view_as(pred)).sum().item()
         total   += compImg.size()[0]*compImg.size()[1]*compImg.size()[2]
-        img = img.detach(); compImg = compImg.detach(); pred = pred.detach(); loss = loss.detach()
+        #img = img.detach(); compImg = compImg.detach(); pred = pred.detach(); loss = loss.detach()
 
     accuracy = 1-(correct/total)
     avgLoss  = lossTot/len(loader)
@@ -369,15 +366,6 @@ def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAda
         evaluate     = evalAutoEnc
         minibatch    = 2
         functionName = "AutoEncTrainer"
-
-    '''
-    elif trainType == 'semi':
-        criterion    = nn.MSELoss()
-        optimizer    = torch.optim.Adam(net.parameters(), lr=lr)
-        evaluate     = evalSemiSup
-        minibatch    = 2
-        functionName = "SemiTrainer"
-    '''
 
     modelpath = oPath+"/TrainingRuns/{}/{}_b{}_te{}_lr{}/".format(functionName, net.name, batchsize, epochNo, lr)
     torch.manual_seed(1000)
