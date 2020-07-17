@@ -127,7 +127,7 @@ def openCVImgConvert(func, oPath, iPath="data/working-wheat-data/train"):
         if i%200==0: print("Converted {:.2f}% of images".format(100*i/len(files)))
     print("Finished Conversion of Images")
 
-def createMask(bboxes, imgRes=(1024, 2014)):
+def createMask(bboxes, imgRes=(1024, 1024)):
     globalMask = np.zeros(imgRes, dtype=bool)
     for bbox in bboxes:
         oneMask = np.zeros(imgRes, dtype=bool)
@@ -175,11 +175,6 @@ class imgLoader(utilData.Dataset):
             if self.mode == 'default':
                 for i, imgName in enumerate(list(self.imgDict.keys())):
                     if not os.path.isfile(self.tempPath+imgName.split('.jpg')[0]):
-                        '''
-                        img   = cv2.imread(self.imgPath+imgName)
-                        trans = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
-                        img   = trans(img).float()
-                        '''
                         img = self.convertImg(imgName)
                         torch.save(img, self.tempPath+imgName.split('.jpg')[0])
                         if i%150==0: print('Converted {:.2f}%'.format(100*i/len(self.imgDict)))
@@ -188,12 +183,6 @@ class imgLoader(utilData.Dataset):
                 alexnet = torchvision.models.alexnet(pretrained=True); alexnet.cuda()
                 for i, imgName in enumerate(list(self.imgDict.keys())):
                     if not os.path.isfile(self.tempPath+imgName.split('.jpg')[0]):
-                        '''
-                        img = cv2.imread(self.imgPath+imgName)
-                        transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
-                        img = transform(img).float()
-                        img = torch.squeeze(alexnet.features(torch.unsqueeze(img, 0).cuda()), 0)
-                        '''
                         img = self.convertImg(imgName)
                         torch.save(img, self.tempPath+imgName.split('.jpg')[0])
                         if i%100 == 0: print("Converted {:.2f}%".format(100*i/len(self.imgDict)))
@@ -203,6 +192,13 @@ class imgLoader(utilData.Dataset):
                     if not os.path.isfile(self.tempPath+imgName.split('.jpg')[0]):
                         img, compImg = self.convertImg(imgName) 
                         torch.save({'img': img, 'compImg': compImg}, self.tempPath+imgName.split('.jpg')[0])
+                        if i%150==0: print('Converted {:.2f}%'.format(100*i/len(self.imgDict)))
+            
+            elif self.mode == 'semi':
+                for i, imgName in enumerate(list(self.imgDict.keys())):
+                    if not os.path.isfile(self.tempPath+imgName.split('.jpg')[0]):
+                        img = self.convertImg(imgName)
+                        torch.save(img, self.tempPath+imgName.split('.jpg')[0])
                         if i%150==0: print('Converted {:.2f}%'.format(100*i/len(self.imgDict)))
             
             else: print('ERROR: UNSUPPORTED MODE IN IMAGE LOADER'); return
@@ -218,37 +214,15 @@ class imgLoader(utilData.Dataset):
             if   self.mode == 'default': img = self.convertImg(imgName)
             elif self.mode == 'tensor' : img = self.convertImg(imgName)
             elif self.mode == 'auto'   : img, compImg = self.convertImg(imgName) 
-            '''
-            if self.mode == 'default':
-                img = cv2.imread(self.imgPath+imgName)
-                img = trans(img).float().detach()
+            elif self.mode == 'semi'   : img = self.convertImg(imgName)
 
-            elif self.mode == 'tensor':
-                alexnet = torchvision.models.alexnet(pretrained=True); alexnet.cuda()
-                img = cv2.imread(self.imgPath+imgName)
-                img = transform(img).float()
-                img = torch.squeeze(alexnet.features(torch.unsqueeze(img, 0).cuda()), 0)
-                img = img.detach().cpu()
-            
-            elif self.mode == 'auto':
-                img     = cv2.imread(self.imgPath+imgName)
-                compImg = cv2.imread(self.altArg['compPath']+'/'+imgName)
-                img     = trans(img).float().detach()
-                compImg = trans(compImg).float().detach()
-            '''
+        elif self.preCalc==1: img = torch.load(self.tempPath+imgName.split('.jpg')[0])
 
-        elif self.preCalc==1:
-            img = torch.load(self.tempPath+imgName.split('.jpg')[0])
-
-        if self.mode == 'default':
-            return(img,  float(len(self.imgDict[imgName])), imgName, self.imgDict[imgName])
-
-        elif self.mode == 'tensor':
-            return(img,  float(len(self.imgDict[imgName])), imgName, self.imgDict[imgName])
-
-        elif self.mode == 'auto':
-            return(img, compImg, imgName)
-
+        if self.mode == 'default' : return(img,  float(len(self.imgDict[imgName])), imgName, self.imgDict[imgName])
+        elif self.mode == 'tensor': return(img,  float(len(self.imgDict[imgName])), imgName, self.imgDict[imgName])
+        elif self.mode == 'auto'  : return(img, compImg, imgName)
+        elif self.mode == 'semi'  : return(img,  float(len(self.imgDict[imgName])), imgName, self.imgDict[imgName])
+        
         else: print('ERROR: UNSUPPORTED MODE IN IMAGE LOADER'); return
 
     def convertImg(self, imgName):
@@ -256,23 +230,27 @@ class imgLoader(utilData.Dataset):
         img = cv2.imread(self.imgPath+imgName)
         if self.mode == 'default':
             img = trans(img).float().detach()
-
             return(img)
 
         elif self.mode == 'tensor':
             alexnet = torchvision.models.alexnet(pretrained=True); alexnet.cuda()
-            img = transform(img).float()
+            img = trans(img).float().detach()
             img = torch.squeeze(alexnet.features(torch.unsqueeze(img, 0).cuda()), 0)
             img = img.detach().cpu()
-
             return(img)
 
         elif self.mode == 'auto':
             compImg = createMask(self.imgDict[imgName]).copy()
             img     = trans(img).float().detach()
-            compImg = trans(compImg).float().detach()
-
+            compImg = torch.squeeze(trans(compImg).long().detach(), 0)
             return(img, compImg)
+
+        elif self.mode == 'semi':
+            img  = trans(img).float().detach().cuda()
+            img = torch.unsqueeze(img, 0)
+            code = self.altArg['enc'].encoder((img)).detach().cpu()
+            code = torch.squeeze(code, 0)
+            return(code)
 
 def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-wheat-data/train", tempPath='temp/default', mode='default', altArg={}, preCalc=1):
     """
@@ -317,8 +295,8 @@ def evalRegress(net, loader, criterion, optimizer, isTraining, gpu=1, noBatches=
     """
     lossTot = 0
     for i, (img, noBbox, _, _) in enumerate(loader):  # if isTraining, computing loss and training, if not, then computing loss
-        if gpu and torch.cuda.is_available(): img = img.cuda(); noBbox = noBbox.cuda()
-        noBbox = noBbox.float(); img = img.float()
+        if gpu and torch.cuda.is_available(): img = img.cuda();  noBbox = noBbox.cuda()
+        img = img.float(); noBbox = noBbox.float()
         pred = net(img); pred=torch.squeeze(pred, 1)
         loss = criterion(pred, noBbox); lossTot += float(loss)
         if isTraining:
@@ -326,6 +304,7 @@ def evalRegress(net, loader, criterion, optimizer, isTraining, gpu=1, noBatches=
             optimizer.step()
             optimizer.zero_grad()
         
+        img = img.detach(); pred = pred.detach(); loss = loss.detach()
         if noBatches!=0 and i==noBatches: break
 
     accuracy = np.sqrt(lossTot/len(loader))
@@ -333,21 +312,29 @@ def evalRegress(net, loader, criterion, optimizer, isTraining, gpu=1, noBatches=
     return(avgLoss, accuracy)
 
 def evalAutoEnc(net, loader, criterion, optimizer, isTraining, gpu=1, noBatches=0):
+    correct = 0
     lossTot = 0
+    total   = 0
+    softMax = nn.LogSoftmax()
     for i, (img, compImg, _) in enumerate(loader):  # if isTraining, computing loss and training, if not, then computing loss
         if gpu and torch.cuda.is_available(): img = img.cuda(); compImg = compImg.cuda()
-        compImg = compImg.float(); img = img.float()
         pred = net(img)
         loss = criterion(pred, compImg); lossTot += float(loss)
         if isTraining:
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
-        
+
         if noBatches!=0 and i==noBatches: break
 
-    accuracy = np.sqrt(lossTot/len(loader))
-    avgLoss = lossTot/len(loader)
+        pred     = softMax(pred)
+        pred     = pred.max(1, keepdim=True)[1]
+        correct += pred.eq(compImg.view_as(pred)).sum().item()
+        total   += compImg.size()[0]*compImg.size()[1]*compImg.size()[2]
+        img = img.detach(); compImg = compImg.detach(); pred = pred.detach(); loss = loss.detach()
+
+    accuracy = 1-(correct/total)
+    avgLoss  = lossTot/len(loader)
     return(avgLoss, accuracy)
 
 def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAdam', isCuda=1, draw=1):
@@ -370,18 +357,27 @@ def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAda
     # Defining a saving path for ease of use
     if trainType == 'RegAdam':
         # Define criterion and optimizers
-        criterion = nn.MSELoss()
-        optimizer = torch.optim.Adam(net.parameters(), lr=lr)
-        evaluate = evalRegress
-        minibatch = 0
+        criterion    = nn.MSELoss()
+        optimizer    = torch.optim.Adam(net.parameters(), lr=lr)
+        evaluate     = evalRegress
+        minibatch    = 0
         functionName = "RegAdamTrainer"  # Name of the function used (incase we decide to use different optimizers, use alexnet etc)
 
-    elif trainType == 'AutoEnc':
-        criterion = nn.CrossEntropyLoss()
-        optimizer = torch.optim.Adam(net.parameters(), lr=lr)
-        evaluate  = evalAutoEnc
-        minibatch = 10
+    elif trainType == 'auto':
+        criterion    = nn.CrossEntropyLoss()
+        optimizer    = torch.optim.Adam(net.parameters(), lr=lr)
+        evaluate     = evalAutoEnc
+        minibatch    = 2
         functionName = "AutoEncTrainer"
+
+    '''
+    elif trainType == 'semi':
+        criterion    = nn.MSELoss()
+        optimizer    = torch.optim.Adam(net.parameters(), lr=lr)
+        evaluate     = evalSemiSup
+        minibatch    = 2
+        functionName = "SemiTrainer"
+    '''
 
     modelpath = oPath+"/TrainingRuns/{}/{}_b{}_te{}_lr{}/".format(functionName, net.name, batchsize, epochNo, lr)
     torch.manual_seed(1000)
@@ -411,9 +407,9 @@ def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAda
         torch.save(net.state_dict(), modelpath+"model_epoch{}".format(epoch))
 
         if isCuda and torch.cuda.is_available():
-            print("Epoch {} | Time Taken: {:.2f}s | Train rootMSE: {:.10f}, Train loss: {:.10f} | Validation rootMSE: {:.10f}, Validation loss: {:.10f}".format(epoch, start.elapsed_time(end)*0.001, trainAcc[epoch], trainLosses[epoch], valAcc[epoch], valLosses[epoch]))
+            print("Epoch {} | Time Taken: {:.2f}s | Training Error: {:.10f}, Training loss: {:.10f} | Validation Error: {:.10f}, Validation loss: {:.10f}".format(epoch, start.elapsed_time(end)*0.001, trainAcc[epoch], trainLosses[epoch], valAcc[epoch], valLosses[epoch]))
         else: 
-            print("Epoch {} | Train rootMSE: {:.10f}, Train loss: {:.10f} | Validation rootMSE: {:.10f}, Validation loss: {:.10f}".format(epoch, trainAcc[epoch], trainLosses[epoch], valAcc[epoch], valLosses[epoch]))
+            print("Epoch {} | Training Error: {:.10f}, Training loss: {:.10f} | Validation Error: {:.10f}, Validation loss: {:.10f}".format(epoch, trainAcc[epoch], trainLosses[epoch], valAcc[epoch], valLosses[epoch]))
 
     if draw: drawResults(modelpath, iters, trainLosses, valLosses, trainAcc, valAcc)
     return(iters, trainLosses, valLosses, trainAcc, valAcc)
@@ -429,10 +425,10 @@ def drawResults(modelpath, iters, trainLosses, valLosses, trainAcc, valAcc):
     """
     plt.plot(iters, trainAcc, '.-', label =  "Training")
     plt.plot(iters,   valAcc, '.-', label = "Validation")
-    plt.title("Model Root Mean Squared Error against Epoch No")
-    plt.xlabel("Epoch"); plt.ylabel("Root Mean Squared Error")
+    plt.title("Model Error against Epoch No")
+    plt.xlabel("Epoch"); plt.ylabel("Error")
     plt.legend(); plt.grid()
-    plt.savefig(modelpath+"Accuracy Graph.png")
+    plt.savefig(modelpath+"Error Graph.png")
     plt.show()
     plt.cla()
 
