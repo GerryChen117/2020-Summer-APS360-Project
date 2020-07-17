@@ -97,7 +97,7 @@ def prevImages(dataPath="saved/splitData/trainData", imgFolder="data/working-whe
     for i, (name, bboxs) in enumerate(imgDict.items()):
         img = cv2.imread(imgFolder+"/"+name)  # read from image folder the image requested
         # Add bboxes
-        [cv2.rectangle(img,(int(bbox[0]), int(bbox[1])),(int(bbox[0]+bbox[2]), int(bbox[1]+bbox[3])),(0,0,255),3) for bbox in bboxs]
+        [cv2.rectangle(img, (int(bbox[0]), int(bbox[1])), (int(bbox[0]+bbox[2]), int(bbox[1]+bbox[3])), (0,0,255),3) for bbox in bboxs]
         cv2.imshow('image', img)  # Show bboxes
         cv2.waitKey(0)  # wait for key press before moving to next image
         if i > 20: break  # Break after 20 images
@@ -194,7 +194,7 @@ class imgLoader(utilData.Dataset):
                         torch.save({'img': img, 'compImg': compImg}, self.tempPath+imgName.split('.jpg')[0])
                         if i%150==0: print('Converted {:.2f}%'.format(100*i/len(self.imgDict)))
             
-            else: print('ERROR: UNSUPPORTED MODE IN IMAGE LOADER'); return
+            else: print('ERROR: UNSUPPORTED MODE IN IMAGE LOADER'); return()
 
     def __len__(self):
         return(len(self.imgDict))
@@ -286,8 +286,7 @@ def evalRegress(net, loader, criterion, optimizer, isTraining, gpu=1, noBatches=
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
-        
-        #img = img.detach(); pred = pred.detach(); loss = loss.detach()
+    
         if noBatches!=0 and i==noBatches: break
 
     accuracy = np.sqrt(lossTot/len(loader))
@@ -328,7 +327,6 @@ def evalAutoEnc(net, loader, criterion, optimizer, isTraining, gpu=1, noBatches=
         pred     = pred.max(1, keepdim=True)[1]
         correct += pred.eq(compImg.view_as(pred)).sum().item()
         total   += compImg.size()[0]*compImg.size()[1]*compImg.size()[2]
-        #img = img.detach(); compImg = compImg.detach(); pred = pred.detach(); loss = loss.detach()
 
     accuracy = 1-(correct/total)
     avgLoss  = lossTot/len(loader)
@@ -380,7 +378,7 @@ def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAda
     for epoch in range(epochNo):
         if isCuda and torch.cuda.is_available():
             start = torch.cuda.Event(enable_timing=True)
-            end = torch.cuda.Event(enable_timing=True)
+            end   = torch.cuda.Event(enable_timing=True)
 
         if isCuda and torch.cuda.is_available(): start.record()
         iters += [epoch]
