@@ -11,6 +11,345 @@ import os
 import ast
 import pandas as pd
 
+# ========== Main Training Code ========== #
+
+def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", mode='default', cuda=1, draw=1):
+    """
+    Big boy function that actually brings all of the function above together and actually trains the model
+    Arguments:
+        net      : the neural net object
+        data     : a 2 list of data loaders; [trainLoader, valLoader]
+        batchsize: the chosen batchsize
+        epochNo  : the chosen max epochNo
+        lr       : the chosen learning rate
+        oPath    : root output path for all files. if '/root' is given, will save to '/root/TrainingRuns/<Folder>/
+        mode     : string used to easily choose particular parameters such as criterion or optimizer
+        cuda     : boolean to indicate if cuda should be used
+        draw     : boolean to indicate if the graph should be drawn
+    Returns:
+        iters, trainLosses, valLosses, trainAcc, valAcc: for debug purposes. All lists of the values at each epoch
+    """
+    # Defining a saving path for ease of use
+    if mode == 'default':
+        # Define criterion and optimizers
+        criterion    = nn.MSELoss()
+        optimizer    = torch.optim.Adam(net.parameters(), lr=lr)
+        evaluate     = evalRegress
+        minibatch    = 0
+        functionName = "RegAdamTrainer"  # Name of the function used (incase we decide to use different optimizers, use alexnet etc)
+
+    elif mode == 'auto':
+        criterion    = nn.CrossEntropyLoss()
+        optimizer    = torch.optim.Adam(net.parameters(), lr=lr)
+        evaluate     = evalAutoEnc
+        minibatch    = 2
+        functionName = "AutoEncTrainer"
+
+    else: print("Unsupported Training Type"); return()
+
+    modelpath = oPath+"/TrainingRuns/{}/{}_b{}_te{}_lr{}/".format(functionName, net.name, batchsize, epochNo, lr)
+    torch.manual_seed(8000)
+    try: os.makedirs(modelpath)  # Make the directory
+    except FileExistsError: None
+    except: print("Error Creating File"); return()
+    else: None
+
+    trainData, valData = data[0], data[1]  # Loading Required Data
+
+    iters, trainLosses, valLosses, trainAcc, valAcc = [], [], [], [], []  # variables to graph and save
+    for epoch in range(epochNo):
+        if cuda and torch.cuda.is_available():
+            start = torch.cuda.Event(enable_timing=True)
+            end   = torch.cuda.Event(enable_timing=True)
+
+        if cuda and torch.cuda.is_available(): start.record()
+        iters += [epoch]
+        #evaluate(net=net, loader=trainData, criterion=criterion, optimizer=optimizer, isTraining=True)
+        trainResults = evaluate(net=net, loader=trainData, criterion=criterion, optimizer=optimizer, isTraining=True , cuda=cuda, noBatches=0)  # Calculating training error and loss
+        valResults   = evaluate(net=net, loader=  valData, criterion=criterion, optimizer=optimizer, isTraining=False, cuda=cuda, noBatches=minibatch)
+
+        if cuda and torch.cuda.is_available(): end.record(); torch.cuda.synchronize()
+
+        trainLosses += [trainResults[0]]; trainAcc += [trainResults[1]]  # Appending results
+        valLosses   += [  valResults[0]]; valAcc   += [  valResults[1]]
+        torch.save(net.state_dict(), modelpath+"model_epoch{}".format(epoch))
+
+        if cuda and torch.cuda.is_available():
+            print("Epoch {} | Time Taken: {:.2f}s | Training Error: {:.10f}, Training loss: {:.10f} | Validation Error: {:.10f}, Validation loss: {:.10f}".format(epoch, start.elapsed_time(end)*0.001, trainAcc[epoch], trainLosses[epoch], valAcc[epoch], valLosses[epoch]))
+        else: 
+            print("Epoch {} | Training Error: {:.10f}, Training loss: {:.10f} | Validation Error: {:.10f}, Validation loss: {:.10f}".format(epoch, trainAcc[epoch], trainLosses[epoch], valAcc[epoch], valLosses[epoch]))
+
+    if draw: drawResults(modelpath, iters, trainLosses, valLosses, trainAcc, valAcc)
+    return(iters, trainLosses, valLosses, trainAcc, valAcc)
+
+# ========== Evaluation Functions ========== #
+def evalRegress(net, loader, criterion, optimizer, isTraining, cuda=1, noBatches=0):
+    """
+    Function used in trainNet() to evaluate a given net for one epoch
+    Arguments:
+        net       : The net object
+        loader    : the loader whose images are being put through the network for evaluation
+        criterion : the criterion function
+        optimizer : the optimizer function
+        isTraining: Boolean to indicate if training should occur with evaluation, if True, optimizer will perform step
+        cuda      : Boolean to indicate if cuda is to be utilized
+        noBatches : the number of batches to iterate though; 0 is maximum of loader
+    Returns:
+        avgLoss : The calculated average loss over the entire epoch (root mean squared error)
+        Accuracy: The calculated accuracy over the epoch (Percentage of correct predictions)
+    """
+    lossTot = 0; correct = 0; total = 0  # Define key variables
+    for i, (img, noBbox, _, _) in enumerate(loader):
+        if cuda and torch.cuda.is_available(): img = img.cuda();  noBbox = noBbox.cuda()
+        img = img.float(); noBbox = noBbox.float()
+        pred = net(img); pred=torch.squeeze(pred, 1)
+        loss = criterion(pred, noBbox); lossTot += float(loss)
+        if isTraining:
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+    
+        if noBatches!=0 and i==noBatches: break
+        correct += torch.round(pred).eq(noBbox.view_as(pred)).sum().item()
+        total   += noBbox.size()[0]
+
+    accuracy = 1-(correct/total)
+    avgLoss = np.sqrt(lossTot/len(loader))
+    return(avgLoss, accuracy)
+
+def evalAutoEnc(net, loader, criterion, optimizer, isTraining, cuda=1, noBatches=0):
+    """
+    Evaluation function used in trainnet to specify the training loop of an auto encoder
+    Arguments:
+        net       : The net object
+        loader    : the loader whose images are being put through the network for evaluation
+        criterion : the criterion function
+        optimizer : the optimizer function
+        isTraining: Boolean to indicate if training should occur with evaluation, if True, optimizer will perform step
+        cuda       : Boolean to indicate if cuda is to be utilized
+        noBatches : the number of batches to iterate though; 0 is maximum of loader
+    Returns:
+        Accuracy: The calculated accuracy over the epoch
+        avgLoss : The calculated average loss over the entire epoch
+    """
+    correct = 0
+    lossTot = 0
+    total   = 0
+    softMax = nn.LogSoftmax()
+    for i, (img, compImg, _) in enumerate(loader):  # if isTraining, computing loss and training, if not, then computing loss
+        if cuda and torch.cuda.is_available(): img = img.cuda(); compImg = compImg.cuda()
+        pred = net(img)
+        loss = criterion(pred, compImg); lossTot += float(loss)
+        if isTraining:
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+
+        if noBatches!=0 and i==noBatches: break
+
+        pred     = softMax(pred)
+        pred     = pred.max(1, keepdim=True)[1]
+        correct += pred.eq(compImg.view_as(pred)).sum().item()
+        total   += compImg.size()[0]*compImg.size()[1]*compImg.size()[2]
+
+    accuracy = 1-(correct/total)
+    avgLoss  = np.sqrt(lossTot/len(loader))
+    return(avgLoss, accuracy)
+
+# ========= Image Loaders ========== #
+
+class imgLoader(utilData.Dataset):
+    """
+    Custom pytorch dataset for loading images
+    __init__:
+        Arguments:
+            dataPath: path to dictionary created by splitData()
+            imgPath : path to an image folder; note, as the class functions by looking up the file name, different folder directories can be given
+                      with the same dataPath as long as the images in those folders have a the same name as the original folder.
+    __len__ :
+        Function which is called when one uses the len() function on an imgLoader Object, returns the number of images
+    __getitem__(self, idx):
+        Function as required by a Map-style dataset. https://pytorch.org/docs/stable/data.html#map-style-datasets
+        returns:
+            img: A tensor version of the image
+            noBbox: The number of bboxes for this given image
+            imgName: name of image (for debug purposes)
+            bboxList: list of bounding boxes as defined as [[bbox1], [bbox2], ...] (for debug purposes)
+    """
+    def __init__(self, dataPath, imgPath):
+        # Defining Variables Required to find and load the data
+        self.imgDict  = torch.load(dataPath)
+        self.imgPath  = imgPath  + "/"
+
+        # Defining required pytorch objects
+        self.trans    = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+
+    def __len__(self):
+        return(len(self.imgDict))
+
+    def __getitem__(self, idx):
+        # Load requested image and convert to pytorch tensor
+        imgName = list(self.imgDict.keys())[idx]
+        img     = cv2.imread(self.imgPath+imgName)
+        img     = self.trans(img).float()
+
+        return(img, float(len(self.imgDict[imgName])), imgName, self.imgDict[imgName])
+
+class tensorLoader(utilData.Dataset):
+    """
+    Custom pytorch dataset for loading images
+    __init__:
+        Arguments:
+            dataPath: path to dictionary created by splitData()
+            imgPath : path to the folder containing tensors; note, as the class functions by looking up the file name, different folder directories can be given
+                      with the same dataPath as long as the images in those folders have a the same name as the original folder.
+    __len__ :
+        Function which is called when one uses the len() function on an imgLoader Object, returns the number of images
+    __getitem__(self, idx):
+        Function as required by a Map-style dataset. https://pytorch.org/docs/stable/data.html#map-style-datasets
+        returns:
+            img: A tensor version of the image
+            noBbox: The number of bboxes for this given image
+            imgName: name of image (for debug purposes)
+            bboxList: list of bounding boxes as defined as [[bbox1], [bbox2], ...] (for debug purposes)
+    """
+    def __init__(self, dataPath, imgPath):
+        # Defining Variables Required to find and load the data
+        self.imgDict  = torch.load(dataPath)
+        self.imgPath  = imgPath  + "/"
+
+    def __len__(self):
+        return(len(self.imgDict))
+
+    def __getitem__(self, idx):
+        imgName = list(self.imgDict.keys())[idx]  # Get image name
+        img = torch.load(self.imgPath+imgName.split('.jpg')[0])  # load from given file
+        return(img, float(len(self.imgDict[imgName])), imgName, self.imgDict[imgName])
+
+class alexLoader(utilData.DataLoader):
+    """
+    Custom pytorch dataset for loading images
+    __init__:
+        Arguments:
+            dataPath: path to dictionary created by splitData()
+            imgPath : path to an image folder; note, as the class functions by looking up the file name, different folder directories can be given
+                      with the same dataPath as long as the images in those folders have a the same name as the original folder.
+            cuda    : boolean to specify whether cuda should be used for alexnet
+    __len__ :
+        Function which is called when one uses the len() function on an imgLoader Object, returns the number of images
+    __getitem__(self, idx):
+        Function as required by a Map-style dataset. https://pytorch.org/docs/stable/data.html#map-style-datasets
+        returns:
+            img: A tensor version of the image
+            noBbox: The number of bboxes for this given image
+            imgName: name of image (for debug purposes)
+            bboxList: list of bounding boxes as defined as [[bbox1], [bbox2], ...] (for debug purposes)
+    """
+    def __init__(self, dataPath, imgPath, cuda=1):
+        # Defining Variables Required to find and load the data
+        self.imgDict  = torch.load(dataPath)
+        self.imgPath  = imgPath  + "/"
+        self.cuda     = cuda
+
+        # Defining required pytorch objects
+        self.trans    = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+        self.alex     = torchvision.models.alexnet(pretrained=True)
+        if torch.cuda.is_available() and self.cuda: self.alex.cuda()
+
+    def __len__(self):
+        return(len(self.imgDict))
+
+    def __getitem__(self, idx):
+        # Load requested image and convert to pytorch tensor
+        imgName = list(self.imgDict.keys())[idx]
+        img     = cv2.imread(self.imgPath+imgName)
+        img     = self.trans(img).float()
+        if torch.cuda.is_available() and self.cuda: img = img.cuda()
+
+        # push image into alexnet features
+        img = torch.squeeze(self.alex.features(torch.unsqueeze(img, 0)), 0)
+        img = img.detach().cpu()
+
+        return(img, float(len(self.imgDict[imgName])), imgName, self.imgDict[imgName])
+
+class autoLoader(utilData.DataLoader):
+    """
+    Custom pytorch dataset for loading images
+    __init__:
+        Arguments:
+            dataPath: path to dictionary created by splitData()
+            imgPath : path to an image folder; note, as the class functions by looking up the file name, different folder directories can be given
+                      with the same dataPath as long as the images in those folders have a the same name as the original folder.
+    __len__ :
+        Function which is called when one uses the len() function on an imgLoader Object, returns the number of images
+    __getitem__(self, idx):
+        Function as required by a Map-style dataset. https://pytorch.org/docs/stable/data.html#map-style-datasets
+        returns:
+            img: A tensor version of the image
+            compImg: A tensor version of the bbox
+            imgName: the name of the image for debug purposes
+    """
+    def __init__(self, dataPath, imgPath):
+        # Defining Variables Required to find and load the data
+        self.imgDict  = torch.load(dataPath)
+        self.imgPath  = imgPath  + "/"
+
+        # Defining required pytorch objects
+        self.trans    = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+
+    def __len__(self):
+        return(len(self.imgDict))
+
+    def __getitem__(self, idx):
+        imgName = list(self.imgDict.keys())[idx]
+        img     = cv2.imread(self.imgPath+imgName)
+        compImg = createMask(self.imgDict[imgName]).copy()
+
+        img     = self.trans(img).float()
+        compImg = torch.squeeze(self.trans(compImg).long(), 0)
+
+        return(img, compImg, imgName)
+
+def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-wheat-data/train", mode='default', args={'cuda':1}):
+    """
+    Function to quickly batch generate a DataLoader
+    Arguments:
+        batchsize: requested batchsize
+        dataPath : path to dictionary created by splitData()
+        inPath   : path to an image folder; note, as the class functions by looking up the file name, different folder directories can be given
+                      with the same dataPath as long as the images in those folders have a the same name as the original folder.
+        alexnet  : bool to pass into imgLoader, to tell it that it if it is loading alexnet features
+    Returns:
+        trainLoader, valLoder, testLoader: The DataLoaders batched as reqested
+    """
+    if mode == 'default':
+        trainData = imgLoader(dataPath=dictPath+"/trainData", imgPath=inPath)
+        valData   = imgLoader(dataPath=dictPath+"/valData"  , imgPath=inPath)
+        testData  = imgLoader(dataPath=dictPath+"/testData" , imgPath=inPath)
+
+    elif mode == 'tensor':
+        trainData = tensorLoader(dataPath=dictPath+"/trainData", imgPath=inPath)
+        valData   = tensorLoader(dataPath=dictPath+"/valData"  , imgPath=inPath)
+        testData  = tensorLoader(dataPath=dictPath+"/testData" , imgPath=inPath)
+
+    elif mode == 'alex':
+        trainData = alexLoader(dataPath=dictPath+"/trainData", imgPath=inPath, cuda=args['cuda'])
+        valData   = alexLoader(dataPath=dictPath+"/valData"  , imgPath=inPath, cuda=args['cuda'])
+        testData  = alexLoader(dataPath=dictPath+"/testData" , imgPath=inPath, cuda=args['cuda'])       
+
+    elif mode == 'auto':
+        trainData = autoLoader(dataPath=dictPath+"/trainData", imgPath=inPath)
+        valData   = autoLoader(dataPath=dictPath+"/valData"  , imgPath=inPath)
+        testData  = autoLoader(dataPath=dictPath+"/testData" , imgPath=inPath)      
+
+    trainLoader = utilData.DataLoader(trainData, batch_size=batchsize, shuffle=1)
+    valLoader   = utilData.DataLoader(valData  , batch_size=batchsize, shuffle=1)
+    testLoader  = utilData.DataLoader(testData , batch_size=batchsize, shuffle=1)
+
+    return(trainLoader, valLoader, testLoader)
+
+# ========== Functions related to data processing, converting or transforming images ========= #
+
 def splitData(ratio=[0.8, 0.1, 0.1], iPath="data/working-wheat-data/train", oPath="saved/splitData", koPath="data/working-wheat-data/train.csv"):
     """
     Function that takes the given input path (iPath) splits the image set into a given ratio then saves the names of images in each list to files
@@ -86,22 +425,6 @@ def appendKnownOutputs(imgList, koPath):
         imgDict[img] = [ast.literal_eval(bbox) for bbox in relRow['bbox']]  # Save all bboxes to dictionary
     return(imgDict)
 
-def prevImages(dataPath="saved/splitData/trainData", imgFolder="data/working-wheat-data/train"):
-    """
-    Function to simply test images and the bboxes
-    Arguments:
-        dataPath: path to csv file
-        imgFolder: path to images
-    """
-    imgDict = torch.load(dataPath)  # Load Dictionary as generated by splitData
-    for i, (name, bboxs) in enumerate(imgDict.items()):
-        img = cv2.imread(imgFolder+"/"+name)  # read from image folder the image requested
-        # Add bboxes
-        [cv2.rectangle(img, (int(bbox[0]), int(bbox[1])), (int(bbox[0]+bbox[2]), int(bbox[1]+bbox[3])), (0,0,255),3) for bbox in bboxs]
-        cv2.imshow('image', img)  # Show bboxes
-        cv2.waitKey(0)  # wait for key press before moving to next image
-        if i > 20: break  # Break after 20 images
-
 def openCVImgConvert(func, oPath, iPath="data/working-wheat-data/train"):
     """
     Funtion to help quickly apply an openCV image transformation and save the outputs
@@ -138,302 +461,7 @@ def createMask(bboxes, imgRes=(1024, 1024)):
     globalMask = np.rot90(globalMask, 1)
     return(globalMask)
 
-class imgLoader(utilData.Dataset):
-    """
-    Custom pytorch dataset for loading images
-    __init__:
-        Arguments:
-            dataPath: path to dictionary created by splitData()
-            imgPath : path to an image folder; note, as the class functions by looking up the file name, different folder directories can be given
-                      with the same dataPath as long as the images in those folders have a the same name as the original folder.
-            alexnet : changes the behaviour of __get__item() depending on if its loading alexnet features
-    __len__ :
-        Function which is called when one uses the len() function on an imgLoader Object, returns the number of images
-    __getitem__(self, idx):
-        Function as required by a Map-style dataset. https://pytorch.org/docs/stable/data.html#map-style-datasets
-        returns:
-            img: A tensor version of the image
-            noBbox: The number of bboxes for this given image
-            imgName: name of image (for debug purposes)
-            bboxList: list of bounding boxes as defined as [[bbox1], [bbox2], ...] (for debug purposes)
-
-    """
-    def __init__(self, dataPath, imgPath, tempPath, mode, altArg, preCalc):  # Defining inital variables
-        self.imgDict  = torch.load(dataPath)
-        self.imgPath  = imgPath  + "/"
-        self.tempPath = tempPath + '/'
-        self.mode     = mode
-        self.altArg   = altArg
-        self.preCalc  = preCalc
-
-        if self.preCalc==1:
-            try: os.makedirs(self.tempPath)  # Make the directory
-            except FileExistsError: None
-            except: print("Error Creating File"); return()
-            else: None
-        
-            if self.mode == 'default':
-                for i, imgName in enumerate(list(self.imgDict.keys())):
-                    if not os.path.isfile(self.tempPath+imgName.split('.jpg')[0]):
-                        img = self.convertImg(imgName)
-                        torch.save(img, self.tempPath+imgName.split('.jpg')[0])
-                        if i%150==0: print('Converted {:.2f}%'.format(100*i/len(self.imgDict)))
-
-            elif self.mode == 'tensor':
-                alexnet = torchvision.models.alexnet(pretrained=True); alexnet.cuda()
-                for i, imgName in enumerate(list(self.imgDict.keys())):
-                    if not os.path.isfile(self.tempPath+imgName.split('.jpg')[0]):
-                        img = self.convertImg(imgName)
-                        torch.save(img, self.tempPath+imgName.split('.jpg')[0])
-                        if i%100 == 0: print("Converted {:.2f}%".format(100*i/len(self.imgDict)))
-
-            elif self.mode == 'auto':
-                for i, imgName in enumerate(list(self.imgDict.keys())):
-                    if not os.path.isfile(self.tempPath+imgName.split('.jpg')[0]):
-                        img, compImg = self.convertImg(imgName) 
-                        torch.save({'img': img, 'compImg': compImg}, self.tempPath+imgName.split('.jpg')[0])
-                        if i%150==0: print('Converted {:.2f}%'.format(100*i/len(self.imgDict)))
-            
-            else: print('ERROR: UNSUPPORTED MODE IN IMAGE LOADER'); return()
-
-    def __len__(self):
-        return(len(self.imgDict))
-
-    def __getitem__(self, idx):
-        imgName = list(self.imgDict.keys())[idx]
-
-        if self.preCalc==0:
-            if   self.mode == 'default': img = self.convertImg(imgName)
-            elif self.mode == 'tensor' : img = self.convertImg(imgName)
-            elif self.mode == 'auto'   : img, compImg = self.convertImg(imgName) 
-
-        elif self.preCalc==1: img = torch.load(self.tempPath+imgName.split('.jpg')[0])
-
-        if self.mode == 'default' : return(img,  float(len(self.imgDict[imgName])), imgName, self.imgDict[imgName])
-        elif self.mode == 'tensor': return(img,  float(len(self.imgDict[imgName])), imgName, self.imgDict[imgName])
-        elif self.mode == 'auto'  : return(img, compImg, imgName)
-        
-        else: print('ERROR: UNSUPPORTED MODE IN IMAGE LOADER'); return
-
-    def convertImg(self, imgName):
-        trans = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
-        img = cv2.imread(self.imgPath+imgName)
-        if self.mode == 'default':
-            img = trans(img).float()
-            return(img)
-
-        elif self.mode == 'tensor':
-            alexnet = torchvision.models.alexnet(pretrained=True); alexnet.cuda()
-            img = trans(img).float()
-            img = torch.squeeze(alexnet.features(torch.unsqueeze(img, 0).cuda()), 0)
-            img = img.detach().cpu()
-            return(img)
-
-        elif self.mode == 'auto':
-            compImg = createMask(self.imgDict[imgName]).copy()
-            img     = trans(img).float()
-            compImg = torch.squeeze(trans(compImg).long(), 0)
-            return(img, compImg)
-
-def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-wheat-data/train", tempPath='temp/default', mode='default', altArg={}, preCalc=1):
-    """
-    Function to quickly batch generate a DataLoader
-    Arguments:
-        batchsize: requested batchsize
-        dataPath : path to dictionary created by splitData()
-        inPath   : path to an image folder; note, as the class functions by looking up the file name, different folder directories can be given
-                      with the same dataPath as long as the images in those folders have a the same name as the original folder.
-        alexnet  : bool to pass into imgLoader, to tell it that it if it is loading alexnet features
-    Returns:
-        trainLoader, valLoder, testLoader: The DataLoaders batched as reqested
-    """
-
-    if preCalc: print('Converting Training Images')
-    trainData = imgLoader(dataPath=dictPath+"/trainData", imgPath=inPath, tempPath=tempPath, mode=mode, altArg=altArg, preCalc=preCalc)
-    if preCalc: print('Converting Validation Images')
-    valData   = imgLoader(dataPath=dictPath+"/valData"  , imgPath=inPath, tempPath=tempPath, mode=mode, altArg=altArg, preCalc=preCalc)
-    if preCalc: print('Converting Testing Images')
-    testData  = imgLoader(dataPath=dictPath+"/testData" , imgPath=inPath, tempPath=tempPath, mode=mode, altArg=altArg, preCalc=preCalc)
-    if preCalc: print('Converting Complete')
-
-    trainLoader = utilData.DataLoader(trainData, batch_size=batchsize, shuffle=1)
-    valLoader   = utilData.DataLoader(valData  , batch_size=batchsize, shuffle=1)
-    testLoader  = utilData.DataLoader(testData , batch_size=batchsize, shuffle=1)
-
-    return(trainLoader, valLoader, testLoader)
-
-def evalRegress(net, loader, criterion, optimizer, isTraining, gpu=1, noBatches=0):
-    """
-    Function used in trainNet() to evaluate a given net for one epoch
-    Arguments:
-        net       : The net object
-        loader    : the loader whose images are being put through the network for evaluation
-        criterion : the criterion function
-        optimizer : the optimizer function
-        isTraining: Boolean to indicate if training should occur with evaluation, if True, optimizer will perform step
-        gpu       : Boolean to indicate if cuda is to be utilized
-    Returns:
-        Accuracy: The calculated accuracy over the epoch
-        avgLoss : The calculated average loss over the entire epoch
-    """
-    lossTot = 0
-    correct = 0
-    total   = 0
-    for i, (img, noBbox, _, _) in enumerate(loader):  # if isTraining, computing loss and training, if not, then computing loss
-        if gpu and torch.cuda.is_available(): img = img.cuda();  noBbox = noBbox.cuda()
-        img = img.float(); noBbox = noBbox.float()
-        pred = net(img); pred=torch.squeeze(pred, 1)
-        loss = criterion(pred, noBbox); lossTot += float(loss)
-        if isTraining:
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-    
-        if noBatches!=0 and i==noBatches: break
-        correct += torch.round(pred).eq(noBbox.view_as(pred)).sum().item()
-        total   += noBbox.size()[0]
-
-    accuracy = 1-(correct/total)
-    avgLoss = np.sqrt(lossTot/len(loader))
-    return(avgLoss, accuracy)
-
-def discEvalReg(net, loader, criterion, optimizer, isTraining, gpu=1, noBatches=0):
-    lossTot = 0
-    correct = 0
-    total   = 0
-    for i, (img, noBbox, _, _) in enumerate(loader):  # if isTraining, computing loss and training, if not, then computing loss
-        if gpu and torch.cuda.is_available(): img = img.cuda();  noBbox = noBbox.cuda()
-        img = img.float(); noBbox = noBbox.float()
-        pred = net(img); pred=torch.squeeze(pred, 1); pred = torch.round(pred)
-        loss = criterion(pred, noBbox); lossTot += float(loss)
-        if isTraining:
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-    
-        if noBatches!=0 and i==noBatches: break
-        correct += pred.eq(noBbox.view_as(pred)).sum().item()
-        total   += noBbox.size()[0]
-
-    accuracy = 1-(correct/total)
-    avgLoss = np.sqrt(lossTot/len(loader))
-    return(avgLoss, accuracy)
-
-def evalAutoEnc(net, loader, criterion, optimizer, isTraining, gpu=1, noBatches=0):
-    """
-    Evaluation function used in trainnet to specify the training loop of an auto encoder
-    Arguments:
-        net       : The net object
-        loader    : the loader whose images are being put through the network for evaluation
-        criterion : the criterion function
-        optimizer : the optimizer function
-        isTraining: Boolean to indicate if training should occur with evaluation, if True, optimizer will perform step
-        gpu       : Boolean to indicate if cuda is to be utilized
-        noBatches : the number of batches to iterate though; 0 is maximum of loader
-    Returns:
-        Accuracy: The calculated accuracy over the epoch
-        avgLoss : The calculated average loss over the entire epoch
-    """
-    correct = 0
-    lossTot = 0
-    total   = 0
-    softMax = nn.LogSoftmax()
-    for i, (img, compImg, _) in enumerate(loader):  # if isTraining, computing loss and training, if not, then computing loss
-        if gpu and torch.cuda.is_available(): img = img.cuda(); compImg = compImg.cuda()
-        pred = net(img)
-        loss = criterion(pred, compImg); lossTot += float(loss)
-        if isTraining:
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-
-        if noBatches!=0 and i==noBatches: break
-
-        pred     = softMax(pred)
-        pred     = pred.max(1, keepdim=True)[1]
-        correct += pred.eq(compImg.view_as(pred)).sum().item()
-        total   += compImg.size()[0]*compImg.size()[1]*compImg.size()[2]
-
-    accuracy = 1-(correct/total)
-    avgLoss  = np.sqrt(lossTot/len(loader))
-    return(avgLoss, accuracy)
-
-def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", trainType='RegAdam', isCuda=1, draw=1):
-    """
-    Big boy function that actually brings all of the function above together and actually trains the model
-    Arguments:
-        net      : the neural net object
-        data     : a 2 list of data loaders; [trainLoader, valLoader]
-        batchsize: the chosen batchsize
-        epochNo  : the chosen max epochNo
-        lr       : the chosen learning rate
-        oPath    : root output path for all files. if '/root' is given, will save to '/root/TrainingRuns/<Folder>/
-        trainType: string used to easily choose particular parameters such as criterion or optimizer
-        evaluate : name of the evaluation function, default to evalRegress
-        isCuda   : boolean to indicate if cuda should be used
-        draw     : boolean to indicate if the graph should be drawn
-    Returns:
-        iters, trainLosses, valLosses, trainAcc, valAcc: for debug purposes. All lists of the values at each epoch
-    """
-    # Defining a saving path for ease of use
-    if trainType == 'RegAdam':
-        # Define criterion and optimizers
-        criterion    = nn.MSELoss()
-        optimizer    = torch.optim.Adam(net.parameters(), lr=lr)
-        evaluate     = evalRegress
-        minibatch    = 0
-        functionName = "RegAdamTrainer"  # Name of the function used (incase we decide to use different optimizers, use alexnet etc)
-    
-    elif trainType == 'discRegAdam':
-        # Define criterion and optimizers
-        criterion    = nn.MSELoss()
-        optimizer    = torch.optim.Adam(net.parameters(), lr=lr)
-        evaluate     = discEvalReg
-        minibatch    = 0
-        functionName = "discRegAdam"  # Name of the function used (incase we decide to use different optimizers, use alexnet etc)
-
-    elif trainType == 'auto':
-        criterion    = nn.CrossEntropyLoss()
-        optimizer    = torch.optim.Adam(net.parameters(), lr=lr)
-        evaluate     = evalAutoEnc
-        minibatch    = 2
-        functionName = "AutoEncTrainer"
-
-    modelpath = oPath+"/TrainingRuns/{}/{}_b{}_te{}_lr{}/".format(functionName, net.name, batchsize, epochNo, lr)
-    torch.manual_seed(8000)
-    try: os.makedirs(modelpath)  # Make the directory
-    except FileExistsError: None
-    except: print("Error Creating File"); return()
-    else: None
-
-    trainData, valData = data[0], data[1]  # Loading Required Data
-
-    iters, trainLosses, valLosses, trainAcc, valAcc = [], [], [], [], []  # variables to graph and save
-    for epoch in range(epochNo):
-        if isCuda and torch.cuda.is_available():
-            start = torch.cuda.Event(enable_timing=True)
-            end   = torch.cuda.Event(enable_timing=True)
-
-        if isCuda and torch.cuda.is_available(): start.record()
-        iters += [epoch]
-        #evaluate(net=net, loader=trainData, criterion=criterion, optimizer=optimizer, isTraining=True)
-        trainResults = evaluate(net=net, loader=trainData, criterion=criterion, optimizer=optimizer, isTraining=True , gpu=isCuda, noBatches=0)  # Calculating training error and loss
-        valResults   = evaluate(net=net, loader=  valData, criterion=criterion, optimizer=optimizer, isTraining=False, gpu=isCuda, noBatches=minibatch)
-
-        if isCuda and torch.cuda.is_available(): end.record(); torch.cuda.synchronize()
-
-        trainLosses += [trainResults[0]]; trainAcc += [trainResults[1]]  # Appending results
-        valLosses   += [  valResults[0]]; valAcc   += [  valResults[1]]
-        torch.save(net.state_dict(), modelpath+"model_epoch{}".format(epoch))
-
-        if isCuda and torch.cuda.is_available():
-            print("Epoch {} | Time Taken: {:.2f}s | Training Error: {:.10f}, Training loss: {:.10f} | Validation Error: {:.10f}, Validation loss: {:.10f}".format(epoch, start.elapsed_time(end)*0.001, trainAcc[epoch], trainLosses[epoch], valAcc[epoch], valLosses[epoch]))
-        else: 
-            print("Epoch {} | Training Error: {:.10f}, Training loss: {:.10f} | Validation Error: {:.10f}, Validation loss: {:.10f}".format(epoch, trainAcc[epoch], trainLosses[epoch], valAcc[epoch], valLosses[epoch]))
-
-    if draw: drawResults(modelpath, iters, trainLosses, valLosses, trainAcc, valAcc)
-    return(iters, trainLosses, valLosses, trainAcc, valAcc)
-
+# ========== NON-ESSENTIAL HELPER FUNCTIONS ========== #
 def drawResults(modelpath, iters, trainLosses, valLosses, trainAcc, valAcc):
     """
     Function used to quickly graph the results of training
@@ -459,6 +487,50 @@ def drawResults(modelpath, iters, trainLosses, valLosses, trainAcc, valAcc):
     plt.legend(); plt.grid()
     plt.savefig(modelpath+"Loss Graph.png")
     plt.show()
+
+def prevImages(dataPath="saved/splitData/trainData", imgFolder="data/working-wheat-data/train"):
+    """
+    Function to simply test images and the bboxes
+    Arguments:
+        dataPath: path to csv file
+        imgFolder: path to images
+    """
+    imgDict = torch.load(dataPath)  # Load Dictionary as generated by splitData
+    for i, (name, bboxs) in enumerate(imgDict.items()):
+        img = cv2.imread(imgFolder+"/"+name)  # read from image folder the image requested
+        # Add bboxes
+        [cv2.rectangle(img, (int(bbox[0]), int(bbox[1])), (int(bbox[0]+bbox[2]), int(bbox[1]+bbox[3])), (0,0,255),3) for bbox in bboxs]
+        cv2.imshow('image', img)  # Show bboxes
+        cv2.waitKey(0)  # wait for key press before moving to next image
+        if i > 20: break  # Break after 20 images
+
+def showResults(net, path):
+    """
+    Function that takes a given autoencoder, the path to a pre-trained state dict of that autoencoder and then displays a collage of images
+    from left to right: displayes the orignal image, the bboxes given for that image, and the output from the network
+    Arguments:
+        net:  torch net obeject for an auto encoder
+        path: path to the fully trained network
+    """
+    trainLoader, valLoader, testLoader = loadData(1, mode='auto')
+    net.load_state_dict(torch.load(path))
+    softMax = nn.LogSoftmax()
+    for img, compImg, _ in trainLoader:
+        out = softMax(net(img.cuda()))
+        pred = out.max(1, keepdim=True)[1]
+        pred = pred.cpu().numpy()
+
+        img = torch.transpose(torch.squeeze(img), 0, 1)
+        img = torch.transpose(torch.squeeze(img), 1, 2)
+
+        c = np.zeros((1024, 1024, 3))
+        c[:, :, 1] = compImg
+
+        p = np.zeros((1024, 1024, 3))
+        p[:, :, 2] = pred
+
+        plt.imshow(np.concatenate((img, c, p), 1))
+        break
 
 def calcNoParam(net):
     """
