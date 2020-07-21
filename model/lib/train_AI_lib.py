@@ -42,13 +42,13 @@ def trainNet(net, data, batchsize, epochNo, lr, oPath="saved", mode='default', c
         criterion    = nn.CrossEntropyLoss()
         optimizer    = torch.optim.Adam(net.parameters(), lr=lr)
         evaluate     = evalAutoEnc
-        minibatch    = 2
+        minibatch    = 4
         functionName = "AutoEncTrainer"
 
     else: print("Unsupported Training Type"); return()
 
     modelpath = oPath+"/TrainingRuns/{}/{}_b{}_te{}_lr{}/".format(functionName, net.name, batchsize, epochNo, lr)
-    torch.manual_seed(8000)
+    torch.manual_seed(1000)
     try: os.makedirs(modelpath)  # Make the directory
     except FileExistsError: None
     except: print("Error Creating File"); return()
@@ -100,7 +100,7 @@ def evalRegress(net, loader, criterion, optimizer, isTraining, cuda=1, noBatches
     """
     lossTot = 0; correct = 0; total = 0  # Define key variables
     for i, (img, noBbox, _, _) in enumerate(loader):
-        if cuda and torch.cuda.is_available(): img = img.cuda();  noBbox = noBbox.cuda()
+        if cuda and torch.cuda.is_available(): img = img.detach().cuda();  noBbox = noBbox.detach().cuda()
         img = img.float(); noBbox = noBbox.float()
         pred = net(img); pred=torch.squeeze(pred, 1)
         loss = criterion(pred, noBbox); lossTot += float(loss)
@@ -112,6 +112,8 @@ def evalRegress(net, loader, criterion, optimizer, isTraining, cuda=1, noBatches
         if noBatches!=0 and i==noBatches: break
         correct += torch.round(pred).eq(noBbox.view_as(pred)).sum().item()
         total   += noBbox.size()[0]
+
+        loss = loss.detach(); pred = pred.detach()
 
     accuracy = 1-(correct/total)
     avgLoss = np.sqrt(lossTot/len(loader))
@@ -137,7 +139,7 @@ def evalAutoEnc(net, loader, criterion, optimizer, isTraining, cuda=1, noBatches
     total   = 0
     softMax = nn.LogSoftmax()
     for i, (img, compImg, _) in enumerate(loader):  # if isTraining, computing loss and training, if not, then computing loss
-        if cuda and torch.cuda.is_available(): img = img.cuda(); compImg = compImg.cuda()
+        if cuda and torch.cuda.is_available(): img = img.detach().cuda(); compImg = compImg.detach().cuda()
         pred = net(img)
         loss = criterion(pred, compImg); lossTot += float(loss)
         if isTraining:
@@ -151,9 +153,10 @@ def evalAutoEnc(net, loader, criterion, optimizer, isTraining, cuda=1, noBatches
         pred     = pred.max(1, keepdim=True)[1]
         correct += pred.eq(compImg.view_as(pred)).sum().item()
         total   += compImg.size()[0]*compImg.size()[1]*compImg.size()[2]
+        loss = loss.detach(); pred = pred.detach()
 
     accuracy = 1-(correct/total)
-    avgLoss  = np.sqrt(lossTot/len(loader))
+    avgLoss  = lossTot/len(loader)
     return(avgLoss, accuracy)
 
 # ========= Image Loaders ========== #
