@@ -464,6 +464,38 @@ def createMask(bboxes, imgRes=(1024, 1024)):
     globalMask = np.rot90(globalMask, 1)
     return(globalMask)
 
+def genMaskedImg(net, outPath='saved/autEncMasked', cuda=1):
+    trainData, valData, testData = loadData(1)
+    softMax = nn.LogSoftmax()
+
+    try: os.makedirs(outPath+"/"+net.name)  # Make the requested oPath
+    except FileExistsError: None
+    except: print("<openCVImgConvert> error creating folder {}".format(oPath)); return(0)
+    else: None
+
+    for data in [trainData, valData, testData]:
+        if data == trainData: print("Convering Training Images"  )
+        if data == valData  : print("Convering Validation Images")
+        if data == testData : print("Convering Testing Images"   )
+        for i, (img, _, imgName, _) in enumerate(data):
+            if torch.cuda.is_available() and cuda: img = img.cuda()
+        
+            pred = softMax(net(img)).cpu().detach()
+            pred = pred.max(1, keepdim=True)[1].numpy()
+            
+            img  = torch.squeeze(img, 0)
+            img  = torch.transpose(img, 0, 1)
+            img  = torch.transpose(img, 1, 2)
+            img  = img.cpu().numpy()
+
+            img[:, :, 0] = np.multiply(img[:, :, 0], pred)
+            img[:, :, 1] = np.multiply(img[:, :, 1], pred)
+            img[:, :, 2] = np.multiply(img[:, :, 2], pred)
+
+            plt.imsave(outPath+"/"+net.name+"/"+imgName[0], img)
+            if i%150==0: print("Converted {:.2f}%".format(100*i/len(data)))
+
+
 # ========== NON-ESSENTIAL HELPER FUNCTIONS ========== #
 def drawResults(modelpath, iters, trainLosses, valLosses, trainAcc, valAcc):
     """

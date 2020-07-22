@@ -1,6 +1,6 @@
 import torch.nn as nn
 class autEncA(nn.Module):
-    def __init__(self, name):
+    def __init__(self, name="autEncA"):
         super(autEncA, self).__init__()
         self.name = name
         self.encoder = nn.Sequential( # like the Composition layer you built
@@ -21,7 +21,7 @@ class autEncA(nn.Module):
         return x
 
 class autEncB(nn.Module):
-    def __init__(self, name):
+    def __init__(self, name="autEncB"):
         super(autEncB, self).__init__()
         self.name = name
         self.encoder = nn.Sequential( # like the Composition layer you built
@@ -42,7 +42,7 @@ class autEncB(nn.Module):
         return x
 
 class autEncC(nn.Module):
-    def __init__(self, name):
+    def __init__(self, name="autEncC"):
         super(autEncC, self).__init__()
         self.name = name
         self.encoder = nn.Sequential( # like the Composition layer you built
@@ -67,7 +67,7 @@ class autEncC(nn.Module):
         return x
 
 class autEncD(nn.Module):  # Ratio of Input Size to code size = 12.8
-    def __init__(self, name):
+    def __init__(self, name="autEncD"):
         super(autEncD, self).__init__()
         self.name = name
         self.encoder = nn.Sequential( # like the Composition layer you built
@@ -92,7 +92,7 @@ class autEncD(nn.Module):  # Ratio of Input Size to code size = 12.8
         return x
 
 class autEncE(nn.Module):  # Ratio of inputsize to code size 3.15
-    def __init__(self, name):
+    def __init__(self, name="autEncE"):
         super(autEncE, self).__init__()
         self.name = name
         self.encoder = nn.Sequential( # like the Composition layer you built
