@@ -179,10 +179,11 @@ class imgLoader(utilData.Dataset):
             imgName: name of image (for debug purposes)
             bboxList: list of bounding boxes as defined as [[bbox1], [bbox2], ...] (for debug purposes)
     """
-    def __init__(self, dataPath, imgPath):
+    def __init__(self, dataPath, imgPath, func=None):
         # Defining Variables Required to find and load the data
         self.imgDict  = torch.load(dataPath)
         self.imgPath  = imgPath  + "/"
+        self.func     = func
 
         # Defining required pytorch objects
         self.trans    = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
@@ -194,7 +195,10 @@ class imgLoader(utilData.Dataset):
         # Load requested image and convert to pytorch tensor
         imgName = list(self.imgDict.keys())[idx]
         img     = cv2.imread(self.imgPath+imgName)
-        img     = self.trans(img).float()
+        
+        if self.func != None: img = self.func(img)
+
+        img = self.trans(img).float()
 
         return(img, float(len(self.imgDict[imgName])), imgName, self.imgDict[imgName])
 
@@ -313,7 +317,7 @@ class autoLoader(utilData.DataLoader):
 
         return(img, compImg, imgName)
 
-def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-wheat-data/train", mode='default', args={'cuda':1}):
+def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-wheat-data/train", mode='default', args={'func':None,'cuda':1}):
     """
     Function to quickly batch generate a DataLoader
     Arguments:
@@ -326,9 +330,9 @@ def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-whe
         trainLoader, valLoder, testLoader: The DataLoaders batched as reqested
     """
     if mode == 'default':
-        trainData = imgLoader(dataPath=dictPath+"/trainData", imgPath=inPath)
-        valData   = imgLoader(dataPath=dictPath+"/valData"  , imgPath=inPath)
-        testData  = imgLoader(dataPath=dictPath+"/testData" , imgPath=inPath)
+        trainData = imgLoader(dataPath=dictPath+"/trainData", imgPath=inPath, func=args['func'])
+        valData   = imgLoader(dataPath=dictPath+"/valData"  , imgPath=inPath, func=args['func'])
+        testData  = imgLoader(dataPath=dictPath+"/testData" , imgPath=inPath, func=args['func'])
 
     elif mode == 'tensor':
         trainData = tensorLoader(dataPath=dictPath+"/trainData", imgPath=inPath)
