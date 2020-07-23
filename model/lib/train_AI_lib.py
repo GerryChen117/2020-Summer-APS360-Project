@@ -194,6 +194,7 @@ class imgLoader(utilData.Dataset):
     def __getitem__(self, idx):
         # Load requested image and convert to pytorch tensor
         imgName = list(self.imgDict.keys())[idx]
+        img     = cv2.imread(self.imgPath+imgName)
         if self.func != None: img = self.func(img)
 
         img = self.trans(img).float()
@@ -451,6 +452,7 @@ def openCVImgConvert(func, oPath, iPath="data/working-wheat-data/train"):
     else: None
     
     for i, f in enumerate(files):  # apply the given func() to every image in file
+        cv2.imwrite(oPath+"/"+f, func(cv2.imread(iPath+"/"+f)))	
         if i%200==0: print("Converted {:.2f}% of images".format(100*i/len(files)))
     print("Finished Conversion of Images")
 
