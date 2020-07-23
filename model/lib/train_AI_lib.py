@@ -179,12 +179,11 @@ class imgLoader(utilData.Dataset):
             imgName : name of image (for debug purposes)
             bboxList: list of bounding boxes as defined as [[bbox1], [bbox2], ...] (for debug purposes)
     """
-    def __init__(self, dataPath, imgPath, func=None, grey=0):
+    def __init__(self, dataPath, imgPath, func=None):
         # Defining Variables Required to find and load the data
         self.imgDict  = torch.load(dataPath)
         self.imgPath  = imgPath  + "/"
         self.func     = func
-        self.grey     = grey
 
         # Defining required pytorch objects
         self.trans    = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
@@ -195,11 +194,6 @@ class imgLoader(utilData.Dataset):
     def __getitem__(self, idx):
         # Load requested image and convert to pytorch tensor
         imgName = list(self.imgDict.keys())[idx]
-        if not self.grey:
-            img = cv2.imread(self.imgPath+imgName)
-        else:
-            img = cv2.imread(self.imgPath+imgName, 0)
-        
         if self.func != None: img = self.func(img)
 
         img = self.trans(img).float()
@@ -321,7 +315,7 @@ class autoLoader(utilData.DataLoader):
 
         return(img, compImg, imgName)
 
-def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-wheat-data/train", mode='default', args={'func':None,'cuda':1,'grey':0}):
+def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-wheat-data/train", mode='default', args={'func':None,'cuda':1}):
     """
     Function to quickly batch generate a DataLoader
     Arguments:
@@ -334,9 +328,9 @@ def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-whe
         trainLoader, valLoder, testLoader: The DataLoaders batched as reqested
     """
     if mode == 'default':
-        trainData = imgLoader(dataPath=dictPath+"/trainData", imgPath=inPath, func=args['func'], grey=args['grey'])
-        valData   = imgLoader(dataPath=dictPath+"/valData"  , imgPath=inPath, func=args['func'], grey=args['grey'])
-        testData  = imgLoader(dataPath=dictPath+"/testData" , imgPath=inPath, func=args['func'], grey=args['grey'])
+        trainData = imgLoader(dataPath=dictPath+"/trainData", imgPath=inPath, func=args['func'])
+        valData   = imgLoader(dataPath=dictPath+"/valData"  , imgPath=inPath, func=args['func'])
+        testData  = imgLoader(dataPath=dictPath+"/testData" , imgPath=inPath, func=args['func'])
 
     elif mode == 'tensor':
         trainData = tensorLoader(dataPath=dictPath+"/trainData", imgPath=inPath)
@@ -436,7 +430,7 @@ def appendKnownOutputs(imgList, koPath):
         imgDict[img] = [ast.literal_eval(bbox) for bbox in relRow['bbox']]  # Save all bboxes to dictionary
     return(imgDict)
 
-def openCVImgConvert(func, oPath, iPath="data/working-wheat-data/train", grey=0):
+def openCVImgConvert(func, oPath, iPath="data/working-wheat-data/train"):
     """
     Funtion to help quickly apply an openCV image transformation and save the outputs
     Examples of Open CV features:
@@ -457,10 +451,6 @@ def openCVImgConvert(func, oPath, iPath="data/working-wheat-data/train", grey=0)
     else: None
     
     for i, f in enumerate(files):  # apply the given func() to every image in file
-        if not grey:
-            cv2.imwrite(oPath+"/"+f, func(cv2.imread(iPath+"/"+f)))
-        else: #read greyscale image
-            cv2.imwrite(oPath+"/"+f, func(cv2.imread(iPath+"/"+f, 0)))            
         if i%200==0: print("Converted {:.2f}% of images".format(100*i/len(files)))
     print("Finished Conversion of Images")
 
