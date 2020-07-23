@@ -110,10 +110,10 @@ def evalRegress(net, loader, criterion, optimizer, isTraining, cuda=1, noBatches
             optimizer.zero_grad()
     
         if noBatches!=0 and i==noBatches: break
-        correct += torch.round(pred).eq(noBbox.view_as(pred)).sum().item()
+        correct += torch.round(pred).eq(noBbox).sum().item()
         total   += noBbox.size()[0]
 
-        loss = loss.detach(); pred = pred.detach()
+        pred = pred.detach()
 
     accuracy = 1-(correct/total)
     avgLoss = np.sqrt(lossTot/len(loader))
