@@ -128,11 +128,11 @@ def evalAutoEnc(net, loader, criterion, optimizer, isTraining, cuda=1, noBatches
         criterion : the criterion function
         optimizer : the optimizer function
         isTraining: Boolean to indicate if training should occur with evaluation, if True, optimizer will perform step
-        cuda       : Boolean to indicate if cuda is to be utilized
+        cuda      : Boolean to indicate if cuda is to be utilized
         noBatches : the number of batches to iterate though; 0 is maximum of loader
     Returns:
-        Accuracy: The calculated accuracy over the epoch
-        avgLoss : The calculated average loss over the entire epoch
+        Accuracy  : The calculated accuracy over the epoch
+        avgLoss   : The calculated average loss over the entire epoch
     """
     correct = 0
     lossTot = 0
@@ -174,16 +174,17 @@ class imgLoader(utilData.Dataset):
     __getitem__(self, idx):
         Function as required by a Map-style dataset. https://pytorch.org/docs/stable/data.html#map-style-datasets
         returns:
-            img: A tensor version of the image
-            noBbox: The number of bboxes for this given image
-            imgName: name of image (for debug purposes)
+            img     : A tensor version of the image
+            noBbox  : The number of bboxes for this given image
+            imgName : name of image (for debug purposes)
             bboxList: list of bounding boxes as defined as [[bbox1], [bbox2], ...] (for debug purposes)
     """
-    def __init__(self, dataPath, imgPath, func=None):
+    def __init__(self, dataPath, imgPath, func=None, grey=0):
         # Defining Variables Required to find and load the data
         self.imgDict  = torch.load(dataPath)
         self.imgPath  = imgPath  + "/"
         self.func     = func
+        self.grey     = grey
 
         # Defining required pytorch objects
         self.trans    = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
@@ -194,7 +195,10 @@ class imgLoader(utilData.Dataset):
     def __getitem__(self, idx):
         # Load requested image and convert to pytorch tensor
         imgName = list(self.imgDict.keys())[idx]
-        img     = cv2.imread(self.imgPath+imgName)
+        if not self.grey:
+            img = cv2.imread(self.imgPath+imgName)
+        else:
+            img = cv2.imread(self.imgPath+imgName, 0)
         
         if self.func != None: img = self.func(img)
 
@@ -215,9 +219,9 @@ class tensorLoader(utilData.Dataset):
     __getitem__(self, idx):
         Function as required by a Map-style dataset. https://pytorch.org/docs/stable/data.html#map-style-datasets
         returns:
-            img: A tensor version of the image
-            noBbox: The number of bboxes for this given image
-            imgName: name of image (for debug purposes)
+            img     : A tensor version of the image
+            noBbox  : The number of bboxes for this given image
+            imgName : name of image (for debug purposes)
             bboxList: list of bounding boxes as defined as [[bbox1], [bbox2], ...] (for debug purposes)
     """
     def __init__(self, dataPath, imgPath):
@@ -247,9 +251,9 @@ class alexLoader(utilData.DataLoader):
     __getitem__(self, idx):
         Function as required by a Map-style dataset. https://pytorch.org/docs/stable/data.html#map-style-datasets
         returns:
-            img: A tensor version of the image
-            noBbox: The number of bboxes for this given image
-            imgName: name of image (for debug purposes)
+            img     : A tensor version of the image
+            noBbox  : The number of bboxes for this given image
+            imgName : name of image (for debug purposes)
             bboxList: list of bounding boxes as defined as [[bbox1], [bbox2], ...] (for debug purposes)
     """
     def __init__(self, dataPath, imgPath, cuda=1):
@@ -298,11 +302,11 @@ class autoLoader(utilData.DataLoader):
     """
     def __init__(self, dataPath, imgPath):
         # Defining Variables Required to find and load the data
-        self.imgDict  = torch.load(dataPath)
-        self.imgPath  = imgPath  + "/"
+        self.imgDict = torch.load(dataPath)
+        self.imgPath = imgPath  + "/"
 
         # Defining required pytorch objects
-        self.trans    = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+        self.trans   = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
 
     def __len__(self):
         return(len(self.imgDict))
@@ -317,7 +321,7 @@ class autoLoader(utilData.DataLoader):
 
         return(img, compImg, imgName)
 
-def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-wheat-data/train", mode='default', args={'func':None,'cuda':1}):
+def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-wheat-data/train", mode='default', args={'func':None,'cuda':1,'grey':0}):
     """
     Function to quickly batch generate a DataLoader
     Arguments:
@@ -330,9 +334,9 @@ def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-whe
         trainLoader, valLoder, testLoader: The DataLoaders batched as reqested
     """
     if mode == 'default':
-        trainData = imgLoader(dataPath=dictPath+"/trainData", imgPath=inPath, func=args['func'])
-        valData   = imgLoader(dataPath=dictPath+"/valData"  , imgPath=inPath, func=args['func'])
-        testData  = imgLoader(dataPath=dictPath+"/testData" , imgPath=inPath, func=args['func'])
+        trainData = imgLoader(dataPath=dictPath+"/trainData", imgPath=inPath, func=args['func'], grey=args['grey'])
+        valData   = imgLoader(dataPath=dictPath+"/valData"  , imgPath=inPath, func=args['func'], grey=args['grey'])
+        testData  = imgLoader(dataPath=dictPath+"/testData" , imgPath=inPath, func=args['func'], grey=args['grey'])
 
     elif mode == 'tensor':
         trainData = tensorLoader(dataPath=dictPath+"/trainData", imgPath=inPath)
@@ -347,7 +351,7 @@ def loadData(batchsize, dictPath = "saved/splitData", inPath = "data/working-whe
     elif mode == 'auto':
         trainData = autoLoader(dataPath=dictPath+"/trainData", imgPath=inPath)
         valData   = autoLoader(dataPath=dictPath+"/valData"  , imgPath=inPath)
-        testData  = autoLoader(dataPath=dictPath+"/testData" , imgPath=inPath)      
+        testData  = autoLoader(dataPath=dictPath+"/testData" , imgPath=inPath)
 
     trainLoader = utilData.DataLoader(trainData, batch_size=batchsize, shuffle=1)
     valLoader   = utilData.DataLoader(valData  , batch_size=batchsize, shuffle=1)
@@ -432,7 +436,7 @@ def appendKnownOutputs(imgList, koPath):
         imgDict[img] = [ast.literal_eval(bbox) for bbox in relRow['bbox']]  # Save all bboxes to dictionary
     return(imgDict)
 
-def openCVImgConvert(func, oPath, iPath="data/working-wheat-data/train"):
+def openCVImgConvert(func, oPath, iPath="data/working-wheat-data/train", grey=0):
     """
     Funtion to help quickly apply an openCV image transformation and save the outputs
     Examples of Open CV features:
@@ -441,9 +445,9 @@ def openCVImgConvert(func, oPath, iPath="data/working-wheat-data/train"):
     https://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_morphological_ops/py_morphological_ops.html#morphological-ops
     https://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_filtering/py_filtering.html#filtering
     Arguments:
-        func: a function which takes in an image, transforms it, and then returns the np array
-        oPath: the folder to which the new images are saved to
-        iPath: the folder to the original images
+        func : a function which takes in an image, transforms it, and then returns the np array
+        oPath: the folder to which the new images are saved to.
+        iPath: the folder to the original images.
     """
 
     files = [f for f in os.listdir(iPath) if os.path.isfile(os.path.join(iPath, f))]  # Creating a list of files in iPathDirectory
@@ -453,7 +457,10 @@ def openCVImgConvert(func, oPath, iPath="data/working-wheat-data/train"):
     else: None
     
     for i, f in enumerate(files):  # apply the given func() to every image in file
-        cv2.imwrite(oPath+"/"+f, func(cv2.imread(iPath+"/"+f)))
+        if not grey:
+            cv2.imwrite(oPath+"/"+f, func(cv2.imread(iPath+"/"+f)))
+        else: #read greyscale image
+            cv2.imwrite(oPath+"/"+f, func(cv2.imread(iPath+"/"+f, 0)))            
         if i%200==0: print("Converted {:.2f}% of images".format(100*i/len(files)))
     print("Finished Conversion of Images")
 
