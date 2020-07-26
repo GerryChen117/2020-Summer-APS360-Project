@@ -568,6 +568,17 @@ def showResults(net, path):
         plt.imshow(np.concatenate((img, c, p), 1))
         break
 
+def regresAnalysis(net, train=1, val=1, test=0):
+    trainLoader, valLoader, testLoader = loadData(1)
+    dataLoaders = []
+
+    for img, noBbox, _, _ in trainLoader:
+        pred = net(img)
+        print(pred.size())
+        break
+
+
+
 def calcNoParam(net):
     """
     Function to quickly find the number of total paramters of a net
