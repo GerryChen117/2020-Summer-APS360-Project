@@ -8,8 +8,10 @@ import torchvision.models
 import matplotlib.pyplot as plt
 import cv2
 import os
+import sys
 import ast
 import pandas as pd
+from scipy.stats import norm
 
 # ========== Main Training Code ========== #
 
@@ -453,7 +455,7 @@ def openCVImgConvert(func, oPath, iPath="data/working-wheat-data/train"):
     
     for i, f in enumerate(files):  # apply the given func() to every image in file
         cv2.imwrite(oPath+"/"+f, func(cv2.imread(iPath+"/"+f)))	
-        if i%200==0: print("Converted {:.2f}% of images".format(100*i/len(files)))
+        print("Converted {:.2f}% of images".format(100*i/len(files)), end='\r')
     print("Finished Conversion of Images")
 
 def createMask(bboxes, imgRes=(1024, 1024)):
@@ -496,7 +498,7 @@ def genMaskedImg(net, outPath='saved/autEncMasked', cuda=1):
             img[:, :, 2] = np.multiply(img[:, :, 2], pred)
 
             plt.imsave(outPath+"/"+net.name+"/"+imgName[0], img)
-            if i%150==0: print("Converted {:.2f}%".format(100*i/len(data)))
+            print("Converted {:.2f}%".format(100*i/len(data)), end='\r')
 
 
 # ========== NON-ESSENTIAL HELPER FUNCTIONS ========== #
@@ -570,15 +572,56 @@ def showResults(net, path):
         plt.imshow(np.concatenate((img, c, p), 1))
         break
 
-def regresAnalysis(net, train=1, val=1, test=0):
-    trainLoader, valLoader, testLoader = loadData(1)
-    dataLoaders = []
+def regresAnalysis(net, loader, modelpath, mode='train'):
+    errorList = []
+    noBboxList = []
+    
+    if mode   == 'train':
+        oName = 'train_dist_graph.png'
+        eType = 'Training'
+    elif mode == 'val':
+        oName = 'val_dist_graph.png'
+        eType = 'Validation'
+    elif mode == 'test':
+        eType = 'Testing'
+        oName = 'test_dist_graph.png'
+    else:
+        print("INVALID MODE")
+        return
 
-    for img, noBbox, _, _ in trainLoader:
-        pred = net(img)
-        print(pred.size())
-        break
 
+    for i, (img, noBbox, _, _) in enumerate(loader):
+        pred  = net(img.cuda()).detach().cpu()
+        pred  = torch.squeeze(pred, 0)
+        error = torch.sqrt((pred-noBbox)**2).item()
+        if pred < noBbox: error = -error
+        errorList.append(error)
+        noBboxList.append(noBbox.item())
+        print("Tested {:.2f}%".format(100*i/len(loader)), end='\r')
+        
+    avg = np.average(noBboxList)
+
+    unique      = np.unique(np.round(errorList))
+    (mu, sigma) = norm.fit(errorList)
+
+    color = 'tab:green'
+    fig, ax1 = plt.subplots()
+    ax1.set_xlabel('Error (units of wheat heads)')
+    ax1.set_ylabel('Number of Images', color=color)
+    n, bins, batches = ax1.hist(errorList, unique, facecolor=color)
+    ax1.tick_params(axis='y', color=color)
+
+    color = 'tab:red'
+    ax2 = ax1.twinx()
+    ax2.set_ylabel('Percentage of Images', color=color)
+    y = norm.pdf(bins, mu, sigma)
+    ax2.plot(bins, y, color=color, linewidth=2)
+    ax2.tick_params(axis='y', color=color)
+
+    plt.title("Histogram and Normal Distribution of "+eType+" Errors\nμ={:.3f}, σ={:.3f}, avg no of heads={:.3f}".format(mu, sigma, avg))
+    plt.savefig(modelpath+"/"+oName)
+
+    return(errorList, mu, sigma, avg)
 
 
 def calcNoParam(net):
